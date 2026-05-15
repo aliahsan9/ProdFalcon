@@ -22,6 +22,102 @@ namespace ProdFalcon.Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanIssue", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FilePath")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("LineNumber")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RuleId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("RuleName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("ScanResultId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ScanSessionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ScanResultId");
+
+                    b.HasIndex("ScanSessionId");
+
+                    b.ToTable("ScanIssues");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanResult", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("Score")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ScanResults");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanSession", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ExtractedPath")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ScanSessions");
+                });
+
             modelBuilder.Entity("ProdFalcon.Domain.Entities.AppUser", b =>
                 {
                     b.Property<int>("Id")
@@ -48,6 +144,31 @@ namespace ProdFalcon.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanIssue", b =>
+                {
+                    b.HasOne("ProdFalcon.Application.Scanning.Models.ScanResult", null)
+                        .WithMany("Issues")
+                        .HasForeignKey("ScanResultId");
+
+                    b.HasOne("ProdFalcon.Application.Scanning.Models.ScanSession", "ScanSession")
+                        .WithMany("Issues")
+                        .HasForeignKey("ScanSessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ScanSession");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanResult", b =>
+                {
+                    b.Navigation("Issues");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanSession", b =>
+                {
+                    b.Navigation("Issues");
                 });
 #pragma warning restore 612, 618
         }

@@ -1,0 +1,6 @@
+@ProdFalcon.API_HostAddress = http://localhost:5014
+
+GET {{ProdFalcon.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

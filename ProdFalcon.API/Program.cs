@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using ProdFalcon.Application.Scanning.Interfaces;
+using ProdFalcon.Application.Scanning.Rules;
+using ProdFalcon.Application.Scanning.Services;
 using ProdFalcon.Infrastructure.DependencyInjection;
 using System.Text;
 
@@ -9,6 +12,25 @@ var builder = WebApplication.CreateBuilder(args);
 // ========================================
 // Services
 // ========================================
+
+// ===============================
+// CORE SERVICE
+// ===============================
+builder.Services.AddScoped<IProjectScanner, ProjectScanner>();
+
+// ===============================
+// SCAN RULES REGISTRATION
+// ===============================
+builder.Services.AddScoped<IScanRule, HardcodedConnectionStringRule>();
+builder.Services.AddScoped<IScanRule, HardcodedJwtSecretRule>();
+builder.Services.AddScoped<IScanRule, ApiKeyExposureRule>();
+builder.Services.AddScoped<IScanRule, DebugModeRule>();
+builder.Services.AddScoped<IScanRule, SqlInjectionRiskRule>();
+builder.Services.AddScoped<IScanRule, HttpUsageRule>();
+builder.Services.AddScoped<IScanRule, SensitiveLoggingRule>();
+builder.Services.AddScoped<IScanRule, CorsWildcardRule>();
+builder.Services.AddScoped<IScanRule, MissingAuthorizationRule>();
+builder.Services.AddScoped<IScanRule, PlainTextPasswordRule>();
 
 // Controllers
 builder.Services.AddControllers();
@@ -34,7 +56,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? string.Empty))
     };
 });
 
