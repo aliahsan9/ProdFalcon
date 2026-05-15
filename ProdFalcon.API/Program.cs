@@ -1,25 +1,65 @@
+using Microsoft.EntityFrameworkCore;
+using ProdFalcon.Infrastructure.DependencyInjection;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
 
+// ========================================
+// Add Services to Container
+// ========================================
+
+// Controllers
 builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddInfrastructure(builder.Configuration);
+
+// Swagger / OpenAPI
 builder.Services.AddEndpointsApiExplorer();
+
 builder.Services.AddSwaggerGen();
+
+
+// ========================================
+// Dependency Injection Registrations
+// ========================================
+
+// Example:
+// builder.Services.AddScoped<IAuthService, AuthService>();
+// builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+// builder.Services.AddScoped<IJwtService, JwtService>();
+
+
+// ========================================
+// Build App
+// ========================================
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+
+// ========================================
+// Configure HTTP Request Pipeline
+// ========================================
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
+
     app.UseSwaggerUI();
 }
 
+
+// HTTPS
 app.UseHttpsRedirection();
 
+
+// Authentication & Authorization
+// app.UseAuthentication();
+ 
 app.UseAuthorization();
 
+
+// Map Controllers
 app.MapControllers();
 
+
+// Run Application
 app.Run();

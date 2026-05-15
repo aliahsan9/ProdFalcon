@@ -7,8 +7,22 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="AutoMapper" Version="16.1.1" />
+    <PackageReference Include="FluentValidation" Version="12.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\ProdFalcon.Domain\ProdFalcon.Domain.csproj" />
     <ProjectReference Include="..\ProdFalcon.Shared\ProdFalcon.Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="DTOs\" />
+    <Folder Include="Interfaces\" />
+    <Folder Include="Mappings\" />
+    <Folder Include="Features\" />
+    <Folder Include="Validators\" />
+    <Folder Include="Services\" />
   </ItemGroup>
 
 </Project>
