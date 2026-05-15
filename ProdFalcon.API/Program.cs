@@ -1,86 +1,65 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
-using ProdFalcon.Application.Scanning.Interfaces;
-using ProdFalcon.Application.Scanning.Rules;
-using ProdFalcon.Application.Scanning.Services;
+using ProdFalcon.API.Middleware;
+using ProdFalcon.Application.DependencyInjection;
 using ProdFalcon.Infrastructure.DependencyInjection;
+using Serilog;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-
-// ========================================
-// Services
-// ========================================
-
-// ===============================
-// CORE SERVICE
-// ===============================
-builder.Services.AddScoped<IProjectScanner, ProjectScanner>();
-
-// ===============================
-// SCAN RULES REGISTRATION
-// ===============================
-builder.Services.AddScoped<IScanRule, HardcodedConnectionStringRule>();
-builder.Services.AddScoped<IScanRule, HardcodedJwtSecretRule>();
-builder.Services.AddScoped<IScanRule, ApiKeyExposureRule>();
-builder.Services.AddScoped<IScanRule, DebugModeRule>();
-builder.Services.AddScoped<IScanRule, SqlInjectionRiskRule>();
-builder.Services.AddScoped<IScanRule, HttpUsageRule>();
-builder.Services.AddScoped<IScanRule, SensitiveLoggingRule>();
-builder.Services.AddScoped<IScanRule, CorsWildcardRule>();
-builder.Services.AddScoped<IScanRule, MissingAuthorizationRule>();
-builder.Services.AddScoped<IScanRule, PlainTextPasswordRule>();
-
-// Controllers
-builder.Services.AddControllers();
-
-// Infrastructure (DbContext, Repos, etc.)
-builder.Services.AddInfrastructure(builder.Configuration);
-
-
-// ========================================
-// JWT Authentication
-// ========================================
-
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-.AddJwtBearer(options =>
+// Prevent a background-service cancel during shutdown from stopping the whole host.
+builder.Services.Configure<HostOptions>(options =>
 {
-    options.TokenValidationParameters = new TokenValidationParameters
-    {
-        ValidateIssuer = true,
-        ValidateAudience = true,
-        ValidateLifetime = true,
-        ValidateIssuerSigningKey = true,
-
-        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-        ValidAudience = builder.Configuration["Jwt:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(
-            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? string.Empty))
-    };
+    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore;
 });
 
-builder.Services.AddAuthorization();
+builder.Host.UseSerilog((context, configuration) =>
+    configuration.ReadFrom.Configuration(context.Configuration));
 
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
 
-// ========================================
-// Swagger
-// ========================================
-
+builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"],
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? string.Empty))
+        };
+    });
 
-// ========================================
-// Build App
-// ========================================
+builder.Services.AddAuthorization();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+        policy.WithOrigins(
+                "http://localhost:63275",
+                "https://localhost:4200")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials());
+});
 
 var app = builder.Build();
 
+await app.Services.MigrateDatabaseAsync();
 
-// ========================================
-// Middleware Pipeline
-// ========================================
+app.UseSerilogRequestLogging();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -88,11 +67,29 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseCors("Frontend");
 app.UseHttpsRedirection();
-
-app.UseAuthentication();   // MUST come before Authorization
+app.UseAuthentication();
 app.UseAuthorization();
-
+app.UseMiddleware<SubscriptionValidationMiddleware>();
 app.MapControllers();
 
-app.Run();
+var urls = app.Urls.Any()
+    ? string.Join(", ", app.Urls)
+    : builder.Configuration["ASPNETCORE_URLS"] ?? "http://localhost:5014";
+
+Log.Information("ProdFalcon API listening on {Urls}", urls);
+Log.Information("Swagger UI: http://localhost:5014/swagger");
+
+try
+{
+    app.Run();
+}
+catch (IOException ex) when (ex.Message.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
+                             || ex.InnerException?.Message?.Contains("address already in use", StringComparison.OrdinalIgnoreCase) == true)
+{
+    Log.Fatal(
+        "Cannot start: port 5014 is already in use. " +
+        "Stop the other API instance (Task Manager → ProdFalcon.API) or run: .\\scripts\\Stop-ProdFalconApi.ps1");
+    throw;
+}

@@ -1,10 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using ProdFalcon.Application.DTOs.Auth;
 using ProdFalcon.Application.Interfaces;
 using ProdFalcon.Domain.Entities;
 using ProdFalcon.Infrastructure.Data;
+using ProdFalcon.Shared.Exceptions;
 
-namespace ProdFalcon.Application.Services;
+namespace ProdFalcon.Infrastructure.Services;
 
 public class AuthService : IAuthService
 {
@@ -23,7 +24,7 @@ public class AuthService : IAuthService
             .AnyAsync(x => x.Email == dto.Email);
 
         if (exists)
-            throw new Exception("User already exists");
+            throw new ConflictException("User already exists.");
 
         var user = new AppUser
         {
@@ -50,12 +51,12 @@ public class AuthService : IAuthService
             .FirstOrDefaultAsync(x => x.Email == dto.Email);
 
         if (user == null)
-            throw new Exception("Invalid credentials");
+            throw new UnauthorizedAccessException("Invalid credentials.");
 
         var isValid = BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash);
 
         if (!isValid)
-            throw new Exception("Invalid credentials");
+            throw new UnauthorizedAccessException("Invalid credentials.");
 
         var token = _jwtService.GenerateToken(user);
 

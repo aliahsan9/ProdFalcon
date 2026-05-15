@@ -1,45 +1,110 @@
-﻿using ProdFalcon.Application.Scanning.Interfaces;
+using System.Diagnostics;
+using ProdFalcon.Application.Interfaces;
+using ProdFalcon.Application.Scanning.Interfaces;
 using ProdFalcon.Application.Scanning.Models;
-using ProdFalcon.Application.Scanning.Rules;
 
 namespace ProdFalcon.Application.Scanning.Services;
 
 public class ScanService : IScanService
 {
     private readonly IScanResultRepository _scanResultRepository;
-    private readonly IEnumerable<IScanRule> _rules;
+    private readonly IScanProjectRepository _scanProjectRepository;
+    private readonly IScanRuleExecutor _ruleExecutor;
+    private readonly IRiskScoringService _riskScoring;
 
     public ScanService(
         IScanResultRepository scanResultRepository,
-        IEnumerable<IScanRule> rules)
+        IScanProjectRepository scanProjectRepository,
+        IScanRuleExecutor ruleExecutor,
+        IRiskScoringService riskScoring)
     {
         _scanResultRepository = scanResultRepository;
-        _rules = rules;
+        _scanProjectRepository = scanProjectRepository;
+        _ruleExecutor = ruleExecutor;
+        _riskScoring = riskScoring;
     }
 
-    public async Task<ScanResultDto> ScanProjectAsync(string projectPath, CancellationToken cancellationToken)
+    public async Task<ScanResultDto> ScanProjectAsync(
+        Guid projectId,
+        string projectPath,
+        CancellationToken cancellationToken = default)
     {
-        var result = new ScanResult
-        {
-            ProjectPath = projectPath,
-            CreatedAt = DateTime.UtcNow,
-            Issues = new List<ScanIssue>()
-        };
+        var project = await _scanProjectRepository.GetByIdAsync(projectId, cancellationToken)
+            ?? throw new InvalidOperationException($"Scan project {projectId} was not found.");
 
-        foreach (var rule in _rules)
+        var stopwatch = Stopwatch.StartNew();
+
+        try
         {
-            var issues = await rule.EvaluateAsync(projectPath, cancellationToken);
-            result.Issues.AddRange(issues);
+            project.Status = "Scanning";
+            await _scanProjectRepository.UpdateAsync(project, cancellationToken);
+
+            var execution = await _ruleExecutor.ExecuteAllAsync(projectPath, cancellationToken);
+            var scores = _riskScoring.Calculate(execution.Issues);
+
+            stopwatch.Stop();
+
+            var result = new ScanResult
+            {
+                ScanProjectId = projectId,
+                ProjectPath = projectPath,
+                CreatedAt = DateTime.UtcNow,
+                Score = scores.OverallScore,
+                SecurityScore = scores.SecurityScore,
+                MaintainabilityScore = scores.MaintainabilityScore,
+                PerformanceScore = scores.PerformanceScore,
+                ProductionReadinessScore = scores.ProductionReadinessScore,
+                DurationMs = (int)stopwatch.ElapsedMilliseconds,
+                Status = "Completed",
+                Issues = execution.Issues.Select(i => new ScanIssue
+                {
+                    LineNumber = i.LineNumber,
+                    Description = string.IsNullOrWhiteSpace(i.Description) ? "No description provided" : i.Description,
+                    RuleId = string.IsNullOrWhiteSpace(i.RuleId) ? "unknown" : i.RuleId,
+                    RuleName = string.IsNullOrWhiteSpace(i.RuleName) ? "unknown" : i.RuleName,
+                    Title = string.IsNullOrWhiteSpace(i.Title) ? "Issue detected" : i.Title,
+                    Severity = string.IsNullOrWhiteSpace(i.Severity) ? "Info" : i.Severity,
+                    FilePath = i.FilePath,
+                    Category = string.IsNullOrWhiteSpace(i.Category) ? "General" : i.Category
+                }).ToList()
+            };
+
+            var saved = await _scanResultRepository.SaveAsync(result, cancellationToken);
+
+            project.Status = "Completed";
+            await _scanProjectRepository.UpdateAsync(project, cancellationToken);
+
+            return MapToDto(saved);
         }
-
-        // Save using abstraction (NOT DbContext)
-        await _scanResultRepository.SaveAsync(result, cancellationToken);
-
-        return new ScanResultDto
+        catch
         {
-            SessionId = result.Id,
-            TotalIssues = result.Issues.Count,
-            ProjectPath = result.ProjectPath
-        };
+            project.Status = "Failed";
+            await _scanProjectRepository.UpdateAsync(project, cancellationToken);
+            throw;
+        }
     }
+
+    private static ScanResultDto MapToDto(ScanResult result) =>
+        new()
+        {
+            ProjectId = result.ScanProjectId,
+            ScanResultId = result.Id,
+            ProjectPath = result.ProjectPath,
+            OverallScore = result.Score,
+            SecurityScore = result.SecurityScore,
+            MaintainabilityScore = result.MaintainabilityScore,
+            PerformanceScore = result.PerformanceScore,
+            ProductionReadinessScore = result.ProductionReadinessScore,
+            TotalIssues = result.Issues.Count,
+            Status = result.Status,
+            DurationMs = result.DurationMs,
+            Issues = result.Issues.Select(i => new ScanIssueSummaryDto
+            {
+                Title = i.Title,
+                Severity = i.Severity,
+                FilePath = i.FilePath,
+                RuleName = i.RuleName,
+                Category = i.Category
+            }).ToList()
+        };
 }

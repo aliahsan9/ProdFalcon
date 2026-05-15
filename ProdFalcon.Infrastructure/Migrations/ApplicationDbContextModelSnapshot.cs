@@ -30,7 +30,13 @@ namespace ProdFalcon.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
                     b.Property<string>("Description")
+                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("FilePath")
@@ -46,17 +52,16 @@ namespace ProdFalcon.Infrastructure.Migrations
 
                     b.Property<string>("RuleName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
 
-                    b.Property<int?>("ScanResultId")
-                        .HasColumnType("int");
-
-                    b.Property<int>("ScanSessionId")
+                    b.Property<int>("ScanResultId")
                         .HasColumnType("int");
 
                     b.Property<string>("Severity")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -64,11 +69,52 @@ namespace ProdFalcon.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RuleName");
+
                     b.HasIndex("ScanResultId");
 
-                    b.HasIndex("ScanSessionId");
+                    b.HasIndex("Severity");
 
                     b.ToTable("ScanIssues");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanProject", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ExtractedPath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("UploadedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ZipPath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UploadedAt");
+
+                    b.ToTable("ScanProjects");
                 });
 
             modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanResult", b =>
@@ -79,43 +125,45 @@ namespace ProdFalcon.Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<int>("Score")
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("DurationMs")
                         .HasColumnType("int");
 
-                    b.HasKey("Id");
-
-                    b.ToTable("ScanResults");
-                });
-
-            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanSession", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
+                    b.Property<int>("MaintainabilityScore")
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                    b.Property<int>("PerformanceScore")
+                        .HasColumnType("int");
 
-                    b.Property<string>("ExtractedPath")
+                    b.Property<int>("ProductionReadinessScore")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ProjectPath")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<Guid>("ScanProjectId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Score")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SecurityScore")
                         .HasColumnType("int");
 
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<DateTime>("UploadedAt")
-                        .HasColumnType("datetime2");
-
                     b.HasKey("Id");
 
-                    b.ToTable("ScanSessions");
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("ScanProjectId");
+
+                    b.ToTable("ScanResults");
                 });
 
             modelBuilder.Entity("ProdFalcon.Domain.Entities.AppUser", b =>
@@ -131,7 +179,7 @@ namespace ProdFalcon.Infrastructure.Migrations
 
                     b.Property<string>("Email")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasColumnType("nvarchar(450)");
 
                     b.Property<string>("FullName")
                         .IsRequired()
@@ -143,30 +191,91 @@ namespace ProdFalcon.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Email")
+                        .IsUnique();
+
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.UserSubscription", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("StripeCustomerId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("StripeSubscriptionId")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Tier")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StripeCustomerId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("Subscriptions");
                 });
 
             modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanIssue", b =>
                 {
-                    b.HasOne("ProdFalcon.Application.Scanning.Models.ScanResult", null)
+                    b.HasOne("ProdFalcon.Application.Scanning.Models.ScanResult", "ScanResult")
                         .WithMany("Issues")
-                        .HasForeignKey("ScanResultId");
-
-                    b.HasOne("ProdFalcon.Application.Scanning.Models.ScanSession", "ScanSession")
-                        .WithMany("Issues")
-                        .HasForeignKey("ScanSessionId")
+                        .HasForeignKey("ScanResultId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("ScanSession");
+                    b.Navigation("ScanResult");
                 });
 
             modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanResult", b =>
                 {
-                    b.Navigation("Issues");
+                    b.HasOne("ProdFalcon.Application.Scanning.Models.ScanProject", "ScanProject")
+                        .WithMany("Results")
+                        .HasForeignKey("ScanProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ScanProject");
                 });
 
-            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanSession", b =>
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.UserSubscription", b =>
+                {
+                    b.HasOne("ProdFalcon.Domain.Entities.AppUser", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanProject", b =>
+                {
+                    b.Navigation("Results");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanResult", b =>
                 {
                     b.Navigation("Issues");
                 });

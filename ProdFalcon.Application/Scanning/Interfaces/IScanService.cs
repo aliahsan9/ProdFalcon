@@ -1,9 +1,11 @@
-﻿using ProdFalcon.Application.Scanning.Models;
+using ProdFalcon.Application.Scanning.Models;
 
-namespace ProdFalcon.Application.Scanning.Interfaces
+namespace ProdFalcon.Application.Scanning.Interfaces;
+
+public interface IScanService
 {
-    public interface IScanService
-    {
-        Task<ScanResultDto> ScanProjectAsync(string projectPath, CancellationToken cancellationToken = default);
-    }
+    Task<ScanResultDto> ScanProjectAsync(
+        Guid projectId,
+        string projectPath,
+        CancellationToken cancellationToken = default);
 }

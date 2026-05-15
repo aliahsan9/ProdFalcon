@@ -1,6 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
+using ProdFalcon.Application.Interfaces;
+using ScanResultEntity = ProdFalcon.Application.Scanning.Models.ScanResult;
 using ProdFalcon.Application.Scanning.Interfaces;
-using System.IO.Compression;
+using ProdFalcon.Application.Scanning.Models;
+using ProdFalcon.Shared.Responses;
 
 namespace ProdFalcon.API.Controllers;
 
@@ -8,149 +11,149 @@ namespace ProdFalcon.API.Controllers;
 [Route("api/[controller]")]
 public class ScanController : ControllerBase
 {
+    private readonly IProjectStorageService _storage;
+    private readonly IScanProjectRepository _projectRepository;
     private readonly IScanService _scanService;
+    private readonly IScanResultRepository _scanResultRepository;
+    private readonly ILogger<ScanController> _logger;
 
-    public ScanController(IScanService scanService)
+    public ScanController(
+        IProjectStorageService storage,
+        IScanProjectRepository projectRepository,
+        IScanService scanService,
+        IScanResultRepository scanResultRepository,
+        ILogger<ScanController> logger)
     {
+        _storage = storage;
+        _projectRepository = projectRepository;
         _scanService = scanService;
+        _scanResultRepository = scanResultRepository;
+        _logger = logger;
     }
 
-    [HttpPost("upload")]
-    [RequestSizeLimit(500_000_000)] // 500 MB
-    public async Task<IActionResult> UploadZip(IFormFile file)
+    [HttpGet("{scanResultId:int}")]
+    public async Task<IActionResult> GetScan(int scanResultId, CancellationToken cancellationToken)
     {
+        var result = await _scanResultRepository.GetByIdAsync(scanResultId, cancellationToken);
+        if (result == null)
+            return NotFound(ApiResponse<ScanResultDto>.Fail($"Scan result {scanResultId} not found."));
+
+        return Ok(ApiResponse<ScanResultDto>.Ok(MapToDto(result)));
+    }
+
+    private static ScanResultDto MapToDto(ScanResultEntity result) =>
+        new()
+        {
+            ProjectId = result.ScanProjectId,
+            ScanResultId = result.Id,
+            ProjectPath = result.ProjectPath,
+            OverallScore = result.Score,
+            SecurityScore = result.SecurityScore,
+            MaintainabilityScore = result.MaintainabilityScore,
+            PerformanceScore = result.PerformanceScore,
+            ProductionReadinessScore = result.ProductionReadinessScore,
+            TotalIssues = result.Issues.Count,
+            Status = result.Status,
+            DurationMs = result.DurationMs,
+            Issues = result.Issues.Select(i => new ScanIssueSummaryDto
+            {
+                Title = i.Title,
+                Severity = i.Severity,
+                FilePath = i.FilePath,
+                RuleName = i.RuleName,
+                Category = i.Category
+            }).ToList()
+        };
+
+    [HttpPost("upload")]
+    [RequestSizeLimit(500_000_000)]
+    [ProducesResponseType(typeof(ApiResponse<ScanUploadResponse>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> UploadZip(IFormFile file, CancellationToken cancellationToken)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(ApiResponse<ScanUploadResponse>.Fail("No ZIP file uploaded."));
+
+        var extension = Path.GetExtension(file.FileName);
+        if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            return BadRequest(ApiResponse<ScanUploadResponse>.Fail("Only ZIP files are allowed."));
+
+        var projectId = Guid.NewGuid();
+        string? zipPath = null;
+        string? extractionPath = null;
+
         try
         {
-            // Validate file
-            if (file == null || file.Length == 0)
+            await using var uploadStream = file.OpenReadStream();
+            zipPath = await _storage.SaveZipAsync(projectId, uploadStream, cancellationToken);
+
+            if (!await _storage.ValidateZipAsync(zipPath, cancellationToken))
+                return BadRequest(ApiResponse<ScanUploadResponse>.Fail("Invalid or empty ZIP archive."));
+
+            extractionPath = await _storage.ExtractZipAsync(projectId, zipPath, cancellationToken);
+
+            var project = new ScanProject
             {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "No ZIP file uploaded."
-                });
-            }
+                Id = projectId,
+                FileName = file.FileName,
+                UploadedAt = DateTime.UtcNow,
+                Status = "Processing",
+                ZipPath = zipPath,
+                ExtractedPath = extractionPath
+            };
 
-            // Validate extension
-            var extension = Path.GetExtension(file.FileName);
+            await _projectRepository.CreateAsync(project, cancellationToken);
 
-            if (!extension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            var scanResult = await _scanService.ScanProjectAsync(projectId, extractionPath, cancellationToken);
+
+            var response = new ScanUploadResponse
             {
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "Only ZIP files are allowed."
-                });
-            }
+                ProjectId = projectId,
+                StorageRoot = _storage.StorageRoot,
+                UploadedZip = zipPath,
+                ExtractedProject = extractionPath,
+                Scan = scanResult
+            };
 
-            // ============================================
-            // SOLUTION ROOT FOLDER (ProdFalcon)
-            // ============================================
+            _logger.LogInformation(
+                "Scan completed for project {ProjectId} with score {Score}",
+                projectId,
+                scanResult.OverallScore);
 
-            // Current:
-            // ProdFalcon.API/bin/Debug/net8.0
-
-            // Go back to:
-            // ProdFalcon/
-
-            var solutionRoot = Path.GetFullPath(
-            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")
-              );
-
-            // ============================================
-            // STORAGE FOLDERS
-            // ============================================
-
-            var storageRoot = Path.Combine(solutionRoot, "ProjectStorage");
-
-            var uploadsFolder = Path.Combine(storageRoot, "UploadedZips");
-
-            var extractedFolder = Path.Combine(storageRoot, "ExtractedProjects");
-
-            Directory.CreateDirectory(storageRoot);
-            Directory.CreateDirectory(uploadsFolder);
-            Directory.CreateDirectory(extractedFolder);
-
-            // ============================================
-            // SESSION
-            // ============================================
-
-            var sessionId = Guid.NewGuid().ToString();
-
-            // ============================================
-            // ZIP FILE PATH
-            // ============================================
-
-            var zipFileName = $"{sessionId}.zip";
-
-            var zipPath = Path.Combine(
-                uploadsFolder,
-                zipFileName
-            );
-
-            // Save ZIP file
-            using (var stream = new FileStream(zipPath, FileMode.Create))
-            {
-                await file.CopyToAsync(stream);
-            }
-
-            // ============================================
-            // EXTRACTION PATH
-            // ============================================
-
-            var extractionPath = Path.Combine(
-                extractedFolder,
-                sessionId
-            );
-
-            Directory.CreateDirectory(extractionPath);
-
-            // Extract ZIP
-            ZipFile.ExtractToDirectory(
-                zipPath,
-                extractionPath,
-                true
-            );
-
-            // ============================================
-            // SCAN PROJECT
-            // ============================================
-
-            var scanResult = await _scanService
-                .ScanProjectAsync(extractionPath);
-
-            // ============================================
-            // RESPONSE
-            // ============================================
-
-            return Ok(new
-            {
-                success = true,
-                message = "Project scanned successfully.",
-                sessionId,
-                uploadedZip = zipPath,
-                extractedProject = extractionPath,
-                result = scanResult
-            });
+            return Ok(ApiResponse<ScanUploadResponse>.Ok(
+                response,
+                $"Your project is {scanResult.OverallScore}/100 production ready."));
         }
         catch (InvalidDataException ex)
         {
-            return BadRequest(new
-            {
-                success = false,
-                message = "Invalid ZIP file.",
-                error = ex.Message
-            });
+            await SafeCleanupAsync(projectId);
+            return BadRequest(ApiResponse<ScanUploadResponse>.Fail($"Invalid ZIP file: {ex.Message}"));
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new
-            {
-                success = false,
-                message = "An unexpected error occurred.",
-                error = ex.Message,
-                innerError = ex.InnerException?.Message
-            });
+            _logger.LogError(ex, "ZIP scan failed for project {ProjectId}", projectId);
+            await SafeCleanupAsync(projectId);
+            throw;
         }
     }
+
+    private async Task SafeCleanupAsync(Guid projectId)
+    {
+        try
+        {
+            await _storage.CleanupProjectAsync(projectId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to cleanup storage for project {ProjectId}", projectId);
+        }
+    }
+}
+
+public class ScanUploadResponse
+{
+    public Guid ProjectId { get; set; }
+    public string StorageRoot { get; set; } = string.Empty;
+    public string UploadedZip { get; set; } = string.Empty;
+    public string ExtractedProject { get; set; } = string.Empty;
+    public ScanResultDto Scan { get; set; } = new();
 }

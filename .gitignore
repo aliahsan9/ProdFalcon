@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# ProdFalcon runtime storage
+ProdFalcon_Storage/
+test-sample/
+test-sample.zip
