@@ -1,31 +1,52 @@
-using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using ProdFalcon.Infrastructure.DependencyInjection;
+using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
 
 // ========================================
-// Add Services to Container
+// Services
 // ========================================
 
 // Controllers
 builder.Services.AddControllers();
+
+// Infrastructure (DbContext, Repos, etc.)
 builder.Services.AddInfrastructure(builder.Configuration);
 
-// Swagger / OpenAPI
+
+// ========================================
+// JWT Authentication
+// ========================================
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+    };
+});
+
+builder.Services.AddAuthorization();
+
+
+// ========================================
+// Swagger
+// ========================================
+
 builder.Services.AddEndpointsApiExplorer();
-
 builder.Services.AddSwaggerGen();
-
-
-// ========================================
-// Dependency Injection Registrations
-// ========================================
-
-// Example:
-// builder.Services.AddScoped<IAuthService, AuthService>();
-// builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-// builder.Services.AddScoped<IJwtService, JwtService>();
 
 
 // ========================================
@@ -36,30 +57,20 @@ var app = builder.Build();
 
 
 // ========================================
-// Configure HTTP Request Pipeline
+// Middleware Pipeline
 // ========================================
 
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-
     app.UseSwaggerUI();
 }
 
-
-// HTTPS
 app.UseHttpsRedirection();
 
-
-// Authentication & Authorization
-// app.UseAuthentication();
- 
+app.UseAuthentication();   // MUST come before Authorization
 app.UseAuthorization();
 
-
-// Map Controllers
 app.MapControllers();
 
-
-// Run Application
 app.Run();
