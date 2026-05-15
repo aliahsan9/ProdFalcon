@@ -1,0 +1,14 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ProdFalcon.Domain\ProdFalcon.Domain.csproj" />
+    <ProjectReference Include="..\ProdFalcon.Shared\ProdFalcon.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

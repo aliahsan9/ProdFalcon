@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="ProdFalcon.API/ProdFalcon.API.csproj" />
+  <Project Path="ProdFalcon.Application/ProdFalcon.Application.csproj" />
+  <Project Path="ProdFalcon.Domain/ProdFalcon.Domain.csproj" />
+  <Project Path="ProdFalcon.Infrastructure/ProdFalcon.Infrastructure.csproj" />
+  <Project Path="ProdFalcon.Shared/ProdFalcon.Shared.csproj" />
+</Solution>
