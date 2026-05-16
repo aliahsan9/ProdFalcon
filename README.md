@@ -98,7 +98,6 @@ Make sure you have installed:
 
 ### Clone the repository
 
-```bash
 git clone https://github.com/your-username/prodfalcon-backend.git
 
 ## Navigate to Project Folder
