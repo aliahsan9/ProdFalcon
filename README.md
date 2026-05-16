@@ -98,7 +98,7 @@ Make sure you have installed:
 
 ### Clone the repository
 
-git clone https://github.com/your-username/prodfalcon-backend.git
+git clone [https://github.com/your-username/prodfalcon-backend.git](https://github.com/aliahsan9/ProdFalcon.git)
 
 ## Navigate to Project Folder
 
@@ -145,7 +145,7 @@ Update `appsettings.json` with your environment settings:
 
 Once the project is running, access Swagger UI:
 
-https://localhost:xxxx/swagger
+http://localhost:5130/swagger
 
 ---
 
