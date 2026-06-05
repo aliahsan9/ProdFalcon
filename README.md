@@ -1,4 +1,4 @@
-# 🚀 ProdFalcon Backend
+# ProdFalcon Backend
 
 ProdFalcon Backend is a scalable and secure RESTful API built to power the ProdFalcon platform. It provides robust backend services for project management, task tracking, team collaboration, user management, analytics, notifications, and workflow automation.
 
