@@ -7,6 +7,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Configurations\**" />
+    <Compile Remove="Identity\**" />
+    <Compile Remove="Persistence\**" />
+    <EmbeddedResource Remove="Configurations\**" />
+    <EmbeddedResource Remove="Identity\**" />
+    <EmbeddedResource Remove="Persistence\**" />
+    <None Remove="Configurations\**" />
+    <None Remove="Identity\**" />
+    <None Remove="Persistence\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.26" />
     <PackageReference Include="Microsoft.AspNetCore.Identity" Version="2.3.10" />
@@ -28,12 +40,6 @@
     <ProjectReference Include="..\ProdFalcon.Application\ProdFalcon.Application.csproj" />
     <ProjectReference Include="..\ProdFalcon.Domain\ProdFalcon.Domain.csproj" />
     <ProjectReference Include="..\ProdFalcon.Shared\ProdFalcon.Shared.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Identity\" />
-    <Folder Include="Configurations\" />
-    <Folder Include="Persistence\" />
   </ItemGroup>
 
 </Project>
