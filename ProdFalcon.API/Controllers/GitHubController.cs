@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProdFalcon.Infrastructure.Services;
 using ProdFalcon.Shared.Responses;
@@ -17,6 +18,7 @@ public class GitHubController : ControllerBase
         _logger = logger;
     }
 
+    [AllowAnonymous]
     [HttpPost("webhook")]
     public async Task<IActionResult> Webhook([FromBody] GitHubWebhookPayload payload, CancellationToken cancellationToken)
     {
@@ -46,6 +48,7 @@ public class GitHubController : ControllerBase
         return Ok(ApiResponse<object>.Ok(new { message = "Webhook acknowledged" }));
     }
 
+    [Authorize]
     [HttpPost("auto-fix/{scanResultId:int}")]
     public async Task<IActionResult> CreateAutoFixPr(int scanResultId, CancellationToken cancellationToken)
     {

@@ -1,12 +1,15 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProdFalcon.Application.Interfaces;
-using ScanResultEntity = ProdFalcon.Application.Scanning.Models.ScanResult;
 using ProdFalcon.Application.Scanning.Interfaces;
 using ProdFalcon.Application.Scanning.Models;
+using ProdFalcon.Domain.Enums;
 using ProdFalcon.Shared.Responses;
+using ScanResultEntity = ProdFalcon.Application.Scanning.Models.ScanResult;
 
 namespace ProdFalcon.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/[controller]")]
 public class ScanController : ControllerBase
@@ -15,6 +18,8 @@ public class ScanController : ControllerBase
     private readonly IScanProjectRepository _projectRepository;
     private readonly IScanService _scanService;
     private readonly IScanResultRepository _scanResultRepository;
+    private readonly ITenantProvider _tenantProvider;
+    private readonly IAuditService _auditService;
     private readonly ILogger<ScanController> _logger;
 
     public ScanController(
@@ -22,12 +27,16 @@ public class ScanController : ControllerBase
         IScanProjectRepository projectRepository,
         IScanService scanService,
         IScanResultRepository scanResultRepository,
+        ITenantProvider tenantProvider,
+        IAuditService auditService,
         ILogger<ScanController> logger)
     {
         _storage = storage;
         _projectRepository = projectRepository;
         _scanService = scanService;
         _scanResultRepository = scanResultRepository;
+        _tenantProvider = tenantProvider;
+        _auditService = auditService;
         _logger = logger;
     }
 
@@ -36,7 +45,7 @@ public class ScanController : ControllerBase
     {
         var result = await _scanResultRepository.GetByIdAsync(scanResultId, cancellationToken);
         if (result == null)
-            return NotFound(ApiResponse<ScanResultDto>.Fail($"Scan result {scanResultId} not found."));
+            return NotFound(ApiResponse<ScanResultDto>.Fail("Scan result not found."));
 
         return Ok(ApiResponse<ScanResultDto>.Ok(MapToDto(result)));
     }
@@ -70,6 +79,10 @@ public class ScanController : ControllerBase
     [ProducesResponseType(typeof(ApiResponse<ScanUploadResponse>), StatusCodes.Status200OK)]
     public async Task<IActionResult> UploadZip(IFormFile file, CancellationToken cancellationToken)
     {
+        if (_tenantProvider.Role == TenantRole.Viewer)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<ScanUploadResponse>.Fail("Viewers cannot upload projects."));
+
         if (file == null || file.Length == 0)
             return BadRequest(ApiResponse<ScanUploadResponse>.Fail("No ZIP file uploaded."));
 
@@ -98,12 +111,20 @@ public class ScanController : ControllerBase
                 UploadedAt = DateTime.UtcNow,
                 Status = "Processing",
                 ZipPath = zipPath,
-                ExtractedPath = extractionPath
+                ExtractedPath = extractionPath,
+                UserId = _tenantProvider.UserId
             };
 
             await _projectRepository.CreateAsync(project, cancellationToken);
 
             var scanResult = await _scanService.ScanProjectAsync(projectId, extractionPath, cancellationToken);
+
+            await _auditService.LogAsync(
+                _tenantProvider.TenantId,
+                _tenantProvider.UserId,
+                "ProjectUploaded",
+                $"{{\"projectId\":\"{projectId}\",\"fileName\":\"{file.FileName}\"}}",
+                cancellationToken);
 
             var response = new ScanUploadResponse
             {
@@ -115,8 +136,9 @@ public class ScanController : ControllerBase
             };
 
             _logger.LogInformation(
-                "Scan completed for project {ProjectId} with score {Score}",
+                "Scan completed for project {ProjectId} tenant {TenantId} with score {Score}",
                 projectId,
+                _tenantProvider.TenantId,
                 scanResult.OverallScore);
 
             return Ok(ApiResponse<ScanUploadResponse>.Ok(

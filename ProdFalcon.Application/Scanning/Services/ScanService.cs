@@ -46,6 +46,7 @@ public class ScanService : IScanService
 
             var result = new ScanResult
             {
+                TenantId = project.TenantId,
                 ScanProjectId = projectId,
                 ProjectPath = projectPath,
                 CreatedAt = DateTime.UtcNow,
@@ -58,6 +59,7 @@ public class ScanService : IScanService
                 Status = "Completed",
                 Issues = execution.Issues.Select(i => new ScanIssue
                 {
+                    TenantId = project.TenantId,
                     LineNumber = i.LineNumber,
                     Description = string.IsNullOrWhiteSpace(i.Description) ? "No description provided" : i.Description,
                     RuleId = string.IsNullOrWhiteSpace(i.RuleId) ? "unknown" : i.RuleId,

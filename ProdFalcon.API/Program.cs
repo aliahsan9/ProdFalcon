@@ -56,7 +56,10 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-await app.Services.MigrateDatabaseAsync();
+if (!app.Environment.IsEnvironment("Testing"))
+{
+    await app.Services.MigrateDatabaseAsync();
+}
 
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
@@ -93,3 +96,6 @@ catch (IOException ex) when (ex.Message.Contains("address already in use", Strin
         "Stop the other API instance (Task Manager → ProdFalcon.API) or run: .\\scripts\\Stop-ProdFalconApi.ps1");
     throw;
 }
+
+public partial class Program { }
+

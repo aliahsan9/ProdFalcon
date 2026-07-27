@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ProdFalcon.Application.Interfaces;
 
 namespace ProdFalcon.Infrastructure.Background;
 
@@ -26,7 +25,7 @@ public class StorageCleanupHostedService : BackgroundService
             {
                 try
                 {
-                    await CleanupAsync(stoppingToken);
+                    Cleanup(stoppingToken);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -42,25 +41,33 @@ public class StorageCleanupHostedService : BackgroundService
         }
     }
 
-    private async Task CleanupAsync(CancellationToken cancellationToken)
+    private void Cleanup(CancellationToken cancellationToken)
     {
         using var scope = _serviceProvider.CreateScope();
-        var storage = scope.ServiceProvider.GetRequiredService<IProjectStorageService>();
+        var storage = scope.ServiceProvider.GetRequiredService<Application.Interfaces.IProjectStorageService>();
         var root = storage.StorageRoot;
 
         if (!Directory.Exists(root))
             return;
 
-        foreach (var dir in Directory.GetDirectories(root))
+        foreach (var tenantDir in Directory.GetDirectories(root))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var info = new DirectoryInfo(dir);
-            if (info.LastWriteTimeUtc < DateTime.UtcNow.Subtract(_maxAge)
-                && Guid.TryParse(Path.GetFileName(dir), out var projectId))
+            foreach (var projectDir in Directory.GetDirectories(tenantDir))
             {
-                await storage.CleanupProjectAsync(projectId, cancellationToken);
-                _logger.LogInformation("Cleaned up stale project storage {ProjectId}", projectId);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var info = new DirectoryInfo(projectDir);
+                if (info.LastWriteTimeUtc >= DateTime.UtcNow.Subtract(_maxAge))
+                    continue;
+
+                if (!Guid.TryParse(Path.GetFileName(projectDir), out _))
+                    continue;
+
+                Directory.Delete(projectDir, recursive: true);
+                _logger.LogInformation(
+                    "Cleaned up stale project storage {ProjectDir} under tenant {TenantDir}",
+                    Path.GetFileName(projectDir),
+                    Path.GetFileName(tenantDir));
             }
         }
     }

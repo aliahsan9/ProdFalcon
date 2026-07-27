@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ProdFalcon.Application.Interfaces;
 using ProdFalcon.Infrastructure.Services;
 using ProdFalcon.Shared.Enums;
 using ProdFalcon.Shared.Responses;
@@ -10,19 +12,26 @@ namespace ProdFalcon.API.Controllers;
 public class StripeController : ControllerBase
 {
     private readonly IStripeSubscriptionService _stripeService;
+    private readonly ITenantProvider _tenantProvider;
 
-    public StripeController(IStripeSubscriptionService stripeService)
+    public StripeController(IStripeSubscriptionService stripeService, ITenantProvider tenantProvider)
     {
         _stripeService = stripeService;
+        _tenantProvider = tenantProvider;
     }
 
+    [Authorize]
     [HttpPost("checkout")]
     public async Task<IActionResult> CreateCheckout([FromBody] CheckoutRequest request, CancellationToken cancellationToken)
     {
-        var url = await _stripeService.CreateCheckoutSessionAsync(request.UserId, request.Tier, cancellationToken);
+        var userId = _tenantProvider.UserId
+            ?? throw new UnauthorizedAccessException("Not authenticated.");
+
+        var url = await _stripeService.CreateCheckoutSessionAsync(userId, request.Tier, cancellationToken);
         return Ok(ApiResponse<object>.Ok(new { checkoutUrl = url }));
     }
 
+    [AllowAnonymous]
     [HttpPost("webhook")]
     public async Task<IActionResult> Webhook(CancellationToken cancellationToken)
     {
@@ -37,6 +46,5 @@ public class StripeController : ControllerBase
 
 public class CheckoutRequest
 {
-    public int UserId { get; set; }
     public SubscriptionTier Tier { get; set; } = SubscriptionTier.Pro;
 }

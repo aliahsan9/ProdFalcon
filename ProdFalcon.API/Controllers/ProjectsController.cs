@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProdFalcon.Application.Scanning.Interfaces;
 using ProdFalcon.Shared.Responses;
 
 namespace ProdFalcon.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/projects")]
 public class ProjectsController : ControllerBase

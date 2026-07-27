@@ -1,9 +1,11 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProdFalcon.Application.Scanning.Interfaces;
 using ProdFalcon.Shared.Responses;
 
 namespace ProdFalcon.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/ai")]
 public class AiController : ControllerBase
@@ -21,8 +23,15 @@ public class AiController : ControllerBase
         if (request.ScanResultId <= 0)
             return BadRequest(ApiResponse<AiSuggestionsResponse>.Fail("ScanResultId is required."));
 
-        var suggestions = await _suggestionService.GetSuggestionsAsync(request.ScanResultId, cancellationToken);
-        return Ok(ApiResponse<AiSuggestionsResponse>.Ok(suggestions));
+        try
+        {
+            var suggestions = await _suggestionService.GetSuggestionsAsync(request.ScanResultId, cancellationToken);
+            return Ok(ApiResponse<AiSuggestionsResponse>.Ok(suggestions));
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(ApiResponse<AiSuggestionsResponse>.Fail("Scan result not found."));
+        }
     }
 }
 

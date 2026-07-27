@@ -8,6 +8,7 @@ using ProdFalcon.Infrastructure.Background;
 using ProdFalcon.Infrastructure.Data;
 using ProdFalcon.Infrastructure.Repositories;
 using ProdFalcon.Infrastructure.Services;
+using ProdFalcon.Infrastructure.Tenancy;
 
 namespace ProdFalcon.Infrastructure.DependencyInjection;
 
@@ -17,6 +18,8 @@ public static class InfrastructureServiceRegistration
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddHttpContextAccessor();
+
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
 
@@ -26,8 +29,13 @@ public static class InfrastructureServiceRegistration
             client.Timeout = TimeSpan.FromSeconds(60);
         });
 
+        services.AddScoped<ITenantProvider, HttpTenantProvider>();
+        services.AddScoped<ITenantCacheKeyBuilder, TenantCacheKeyBuilder>();
+        services.AddScoped<IAuditService, AuditService>();
         services.AddScoped<IJwtService, JwtService>();
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<ITenantMemberService, TenantMemberService>();
+        services.AddScoped<ISuperAdminService, SuperAdminService>();
         services.AddScoped<IProjectStorageService, ProjectStorageService>();
         services.AddScoped<IScanProjectRepository, ScanProjectRepository>();
         services.AddScoped<IScanResultRepository, ScanResultRepository>();

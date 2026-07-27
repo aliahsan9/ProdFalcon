@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using ProdFalcon.Application.Interfaces;
 using ProdFalcon.Infrastructure.Services;
 using ProdFalcon.Shared.Enums;
 
@@ -16,30 +18,26 @@ public class SubscriptionValidationMiddleware
     {
         var path = context.Request.Path.Value ?? string.Empty;
 
-        if (path.StartsWith("/api/ai", StringComparison.OrdinalIgnoreCase)
-            && !context.RequestServices.GetRequiredService<IHostEnvironment>().IsDevelopment())
+        if (path.StartsWith("/api/ai", StringComparison.OrdinalIgnoreCase))
         {
-            var userId = ResolveUserId(context);
-            var tier = subscriptionService.GetTierForUser(userId);
-
-            if (tier == SubscriptionTier.Free)
+            var env = context.RequestServices.GetRequiredService<IHostEnvironment>();
+            if (!env.IsDevelopment() && !env.IsEnvironment("Testing"))
             {
-                context.Response.StatusCode = StatusCodes.Status402PaymentRequired;
-                await context.Response.WriteAsJsonAsync(new
+                var tier = subscriptionService.GetTierForCurrentTenant();
+
+                if (tier == SubscriptionTier.Free)
                 {
-                    success = false,
-                    message = "AI suggestions require a Pro or Enterprise subscription."
-                });
-                return;
+                    context.Response.StatusCode = StatusCodes.Status402PaymentRequired;
+                    await context.Response.WriteAsJsonAsync(new
+                    {
+                        success = false,
+                        message = "AI suggestions require a Pro or Enterprise subscription."
+                    });
+                    return;
+                }
             }
         }
 
         await _next(context);
-    }
-
-    private static int ResolveUserId(HttpContext context)
-    {
-        var claim = context.User?.Claims.FirstOrDefault(c => c.Type == "sub" || c.Type == "id");
-        return claim != null && int.TryParse(claim.Value, out var userId) ? userId : 0;
     }
 }

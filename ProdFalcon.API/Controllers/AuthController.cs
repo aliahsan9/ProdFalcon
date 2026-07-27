@@ -1,6 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using ProdFalcon.Application.DTOs.Auth;
 using ProdFalcon.Application.Interfaces;
+using ProdFalcon.Shared.Exceptions;
+using ProdFalcon.Shared.Responses;
 
 namespace ProdFalcon.API.Controllers;
 
@@ -15,17 +18,36 @@ public class AuthController : ControllerBase
         _authService = authService;
     }
 
+    [AllowAnonymous]
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterDto dto)
     {
-        var result = await _authService.RegisterAsync(dto);
-        return Ok(result);
+        try
+        {
+            var result = await _authService.RegisterAsync(dto);
+            return Ok(result);
+        }
+        catch (ConflictException ex)
+        {
+            return Conflict(ApiErrorResponseFail(ex.Message));
+        }
     }
 
+    [AllowAnonymous]
     [HttpPost("login")]
     public async Task<IActionResult> Login(LoginDto dto)
     {
-        var result = await _authService.LoginAsync(dto);
-        return Ok(result);
+        try
+        {
+            var result = await _authService.LoginAsync(dto);
+            return Ok(result);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ApiErrorResponseFail(ex.Message));
+        }
     }
+
+    private static object ApiErrorResponseFail(string message) =>
+        new { success = false, message };
 }

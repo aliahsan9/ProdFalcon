@@ -4,4 +4,5 @@
   <Project Path="ProdFalcon.Domain/ProdFalcon.Domain.csproj" />
   <Project Path="ProdFalcon.Infrastructure/ProdFalcon.Infrastructure.csproj" />
   <Project Path="ProdFalcon.Shared/ProdFalcon.Shared.csproj" />
+  <Project Path="ProdFalcon.Tests/ProdFalcon.Tests.csproj" />
 </Solution>

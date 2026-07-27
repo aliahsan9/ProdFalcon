@@ -1,25 +1,30 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using ProdFalcon.Application.Interfaces;
 using ProdFalcon.Infrastructure.Services;
 using ProdFalcon.Shared.Enums;
 using ProdFalcon.Shared.Responses;
 
 namespace ProdFalcon.API.Controllers;
 
+[Authorize]
 [ApiController]
 [Route("api/billing")]
 public class BillingController : ControllerBase
 {
     private readonly IStripeSubscriptionService _stripeService;
+    private readonly ITenantProvider _tenantProvider;
 
-    public BillingController(IStripeSubscriptionService stripeService)
+    public BillingController(IStripeSubscriptionService stripeService, ITenantProvider tenantProvider)
     {
         _stripeService = stripeService;
+        _tenantProvider = tenantProvider;
     }
 
     [HttpGet("subscription")]
-    public IActionResult GetSubscription([FromQuery] int userId = 0)
+    public IActionResult GetSubscription()
     {
-        var tier = _stripeService.GetTierForUser(userId);
+        var tier = _stripeService.GetTierForCurrentTenant();
         var limits = tier switch
         {
             SubscriptionTier.Enterprise => new { scansPerMonth = -1, aiEnabled = true, ciCdEnabled = true },
@@ -31,6 +36,8 @@ public class BillingController : ControllerBase
         {
             tier = tier.ToString(),
             isActive = tier != SubscriptionTier.Free,
+            organization = _tenantProvider.Organization,
+            tenantId = _tenantProvider.TenantId,
             limits,
             usage = new { scansUsed = 0, scansRemaining = limits.scansPerMonth }
         }));

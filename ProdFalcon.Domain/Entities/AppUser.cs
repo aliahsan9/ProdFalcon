@@ -7,4 +7,8 @@ public class AppUser : BaseEntity
     public string Email { get; set; } = string.Empty;
 
     public string PasswordHash { get; set; } = string.Empty;
+
+    public bool IsSuperAdmin { get; set; }
+
+    public ICollection<TenantMember> Memberships { get; set; } = new List<TenantMember>();
 }
