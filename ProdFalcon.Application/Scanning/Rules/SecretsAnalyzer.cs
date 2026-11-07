@@ -1,0 +1,160 @@
+using System.Text.RegularExpressions;
+using ProdFalcon.Application.Scanning.Models;
+
+namespace ProdFalcon.Application.Scanning.Rules;
+
+public static class SecretsAnalyzer
+{
+    private static readonly (Regex Pattern, string Category, string Severity, string Cwe, string Title)[] Patterns =
+    [
+        (new(@"\bAKIA[0-9A-Z]{16}\b", RegexOptions.Compiled), "AWS access key", "Critical", "CWE-798", "Exposed AWS access key"),
+        (new(@"\bghp_[A-Za-z0-9]{20,}\b", RegexOptions.Compiled), "GitHub personal access token", "Critical", "CWE-798", "Exposed GitHub token"),
+        (new(@"\bgithub_pat_[A-Za-z0-9_]{20,}\b", RegexOptions.Compiled), "GitHub fine-grained token", "Critical", "CWE-798", "Exposed GitHub token"),
+        (new(@"\bsk_live_[0-9a-zA-Z]{16,}\b", RegexOptions.Compiled), "Stripe live secret key", "Critical", "CWE-798", "Exposed Stripe live key"),
+        (new(@"\bsk_test_[0-9a-zA-Z]{16,}\b", RegexOptions.Compiled), "Stripe test secret key", "Medium", "CWE-798", "Exposed Stripe test key"),
+        (new(@"\bAIza[0-9A-Za-z\-_]{30,}\b", RegexOptions.Compiled), "Google API key", "High", "CWE-798", "Exposed Google API key"),
+        (new(@"\bxox[baprs]-[A-Za-z0-9-]{10,}\b", RegexOptions.Compiled), "Slack token", "High", "CWE-798", "Exposed Slack token"),
+        (new(@"-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----", RegexOptions.Compiled), "Private key", "Critical", "CWE-321", "Private key committed to source")
+    ];
+
+    private static readonly Regex AssignedSecret = new(
+        @"\b(api[_-]?key|secret|access[_-]?token|client[_-]?secret|jwt[_-]?secret|signing[_-]?key)\b\s*[:=]\s*['""]([^'""\r\n]{12,})['""]",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex PasswordAssignment = new(
+        @"\b(password|passwd|pwd)\b\s*[:=]\s*['""]([^'""\r\n]{6,})['""]",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    private static readonly Regex ConnectionPassword = new(
+        @"\b(?:Password|Pwd)\s*=\s*([^;""'\s]{4,})",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+    public static List<ScanIssue> AnalyzeFile(string filePath, string content)
+    {
+        var issues = new List<ScanIssue>();
+        if (string.IsNullOrWhiteSpace(content))
+            return issues;
+
+        foreach (var (pattern, category, severity, cwe, title) in Patterns)
+        {
+            foreach (Match match in pattern.Matches(content))
+                issues.Add(Create(filePath, content, match.Index, title, severity, category, cwe, match.Value, "High"));
+        }
+
+        foreach (Match match in AssignedSecret.Matches(content))
+        {
+            var value = match.Groups[2].Value;
+            if (SecretRedactor.IsPlaceholder(value) || ShannonEntropy(value) < 3.4)
+                continue;
+
+            issues.Add(Create(
+                filePath, content, match.Index,
+                "Hardcoded secret assignment",
+                "High",
+                match.Groups[1].Value,
+                "CWE-798",
+                value,
+                "Medium"));
+        }
+
+        foreach (Match match in PasswordAssignment.Matches(content))
+        {
+            var value = match.Groups[2].Value;
+            if (SecretRedactor.IsPlaceholder(value))
+                continue;
+
+            issues.Add(Create(
+                filePath, content, match.Index,
+                "Hardcoded password",
+                "High",
+                "Password",
+                "CWE-798",
+                value,
+                "High"));
+        }
+
+        foreach (Match match in ConnectionPassword.Matches(content))
+        {
+            var value = match.Groups[1].Value;
+            if (SecretRedactor.IsPlaceholder(value))
+                continue;
+
+            if (!content.Contains("Server=", StringComparison.OrdinalIgnoreCase) &&
+                !content.Contains("Host=", StringComparison.OrdinalIgnoreCase) &&
+                !content.Contains("Data Source=", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            issues.Add(Create(
+                filePath, content, match.Index,
+                "Connection string contains a password",
+                "High",
+                "Database credential",
+                "CWE-798",
+                value,
+                "High"));
+        }
+
+        return Dedupe(issues);
+    }
+
+    private static List<ScanIssue> Dedupe(List<ScanIssue> issues)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var unique = new List<ScanIssue>();
+        foreach (var issue in issues)
+        {
+            var key = $"{issue.LineNumber}|{issue.Title}";
+            if (seen.Add(key))
+                unique.Add(issue);
+        }
+
+        return unique;
+    }
+
+    private static ScanIssue Create(
+        string filePath,
+        string content,
+        int index,
+        string title,
+        string severity,
+        string category,
+        string cwe,
+        string secret,
+        string confidence) =>
+        new()
+        {
+            RuleId = "SEC-SECRET-001",
+            RuleName = nameof(ApiKeyExposureRule),
+            Title = title,
+            Severity = severity,
+            Category = "Secrets",
+            FilePath = filePath,
+            LineNumber = SourceTree.LineNumberAt(content, index),
+            Confidence = confidence,
+            Cwe = cwe,
+            DetectionMethod = "Pattern and entropy",
+            Description = $"A {category} appears to be stored in source. The value was redacted.",
+            Evidence = SecretRedactor.Describe(category, secret),
+            Impact = "Anyone with repository or artifact access can reuse this credential.",
+            Remediation = "Revoke the exposed credential, remove it from source and history, and load it from a secret store or environment variable at runtime.",
+            SecureExample = "var apiKey = configuration[\"Integrations:ApiKey\"]; // supplied by the host, not source control",
+            References = "https://owasp.org/www-community/vulnerabilities/Use_of_hard-coded_password",
+            Status = "Open"
+        };
+
+    internal static double ShannonEntropy(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return 0;
+
+        var groups = value.GroupBy(c => c);
+        double entropy = 0;
+        foreach (var group in groups)
+        {
+            var p = (double)group.Count() / value.Length;
+            entropy -= p * Math.Log(p, 2);
+        }
+
+        return entropy;
+    }
+}

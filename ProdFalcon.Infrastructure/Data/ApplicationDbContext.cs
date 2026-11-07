@@ -32,6 +32,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<ScanResult> ScanResults => Set<ScanResult>();
     public DbSet<ScanIssue> ScanIssues => Set<ScanIssue>();
     public DbSet<UserSubscription> Subscriptions => Set<UserSubscription>();
+    public DbSet<FindingStatusHistory> FindingStatusHistory => Set<FindingStatusHistory>();
+    public DbSet<TrackedFinding> TrackedFindings => Set<TrackedFinding>();
+    public DbSet<CopilotMessage> CopilotMessages => Set<CopilotMessage>();
+    public DbSet<RepositoryRegistration> RepositoryRegistrations => Set<RepositoryRegistration>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -84,6 +88,12 @@ public class ApplicationDbContext : DbContext
             entity.Property(x => x.Status).HasMaxLength(64);
             entity.Property(x => x.ZipPath).HasMaxLength(1024);
             entity.Property(x => x.ExtractedPath).HasMaxLength(1024);
+            entity.Property(x => x.SourceType).HasMaxLength(32);
+            entity.Property(x => x.RepositoryUrl).HasMaxLength(500);
+            entity.Property(x => x.Branch).HasMaxLength(200);
+            entity.Property(x => x.CommitSha).HasMaxLength(64);
+            entity.Property(x => x.DisplayName).HasMaxLength(256);
+            entity.Property(x => x.DetectedTechnologies).HasMaxLength(2000);
             entity.HasIndex(x => x.UploadedAt);
             entity.HasIndex(x => x.TenantId);
             entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
@@ -102,8 +112,16 @@ public class ApplicationDbContext : DbContext
                 .HasForeignKey(i => i.ScanResultId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            entity.Property(x => x.Stage).HasMaxLength(64);
+            entity.Property(x => x.StageMessage).HasMaxLength(500);
+            entity.Property(x => x.Technologies).HasMaxLength(2000);
+            entity.Property(x => x.RiskLevel).HasMaxLength(32);
+            entity.Property(x => x.ConfigurationJson).HasMaxLength(2000);
+            entity.Property(x => x.ErrorMessage).HasMaxLength(2000);
+            entity.Property(x => x.CommitSha).HasMaxLength(64);
             entity.HasIndex(x => x.ScanProjectId);
             entity.HasIndex(x => x.CreatedAt);
+            entity.HasIndex(x => x.Status);
             entity.HasIndex(x => x.TenantId);
             entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
@@ -114,8 +132,74 @@ public class ApplicationDbContext : DbContext
             entity.Property(x => x.Severity).HasMaxLength(32);
             entity.Property(x => x.RuleName).HasMaxLength(256);
             entity.Property(x => x.Category).HasMaxLength(128);
+            entity.Property(x => x.Fingerprint).HasMaxLength(128);
+            entity.Property(x => x.Confidence).HasMaxLength(16);
+            entity.Property(x => x.Cwe).HasMaxLength(32);
+            entity.Property(x => x.Cve).HasMaxLength(64);
+            entity.Property(x => x.Status).HasMaxLength(32);
+            entity.Property(x => x.DetectionMethod).HasMaxLength(64);
+            entity.Property(x => x.Evidence).HasMaxLength(2000);
+            entity.Property(x => x.Impact).HasMaxLength(2000);
+            entity.Property(x => x.Remediation).HasMaxLength(4000);
+            entity.Property(x => x.SecureExample).HasMaxLength(4000);
+            entity.Property(x => x.References).HasMaxLength(2000);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.Property(x => x.FilePath).HasMaxLength(1024);
             entity.HasIndex(x => x.Severity);
             entity.HasIndex(x => x.RuleName);
+            entity.HasIndex(x => x.Fingerprint);
+            entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<FindingStatusHistory>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.FromStatus).HasMaxLength(32);
+            entity.Property(x => x.ToStatus).HasMaxLength(32);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.HasIndex(x => x.ScanIssueId);
+            entity.HasIndex(x => x.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<TrackedFinding>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Fingerprint).HasMaxLength(128);
+            entity.Property(x => x.RuleId).HasMaxLength(128);
+            entity.Property(x => x.Title).HasMaxLength(500);
+            entity.Property(x => x.FilePath).HasMaxLength(1024);
+            entity.Property(x => x.Severity).HasMaxLength(32);
+            entity.Property(x => x.Status).HasMaxLength(32);
+            entity.Property(x => x.Notes).HasMaxLength(2000);
+            entity.HasIndex(x => new { x.ScanProjectId, x.Fingerprint }).IsUnique();
+            entity.HasIndex(x => x.TenantId);
+            entity.HasIndex(x => x.Status);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<CopilotMessage>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Role).HasMaxLength(16);
+            entity.Property(x => x.Content).HasMaxLength(8000);
+            entity.HasIndex(x => x.ScanResultId);
+            entity.HasIndex(x => x.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<RepositoryRegistration>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Owner).HasMaxLength(100);
+            entity.Property(x => x.Name).HasMaxLength(100);
+            entity.Property(x => x.Branch).HasMaxLength(200);
+            entity.Property(x => x.TokenHash).HasMaxLength(128);
+            entity.Property(x => x.TokenPrefix).HasMaxLength(16);
+            entity.HasIndex(x => new { x.TenantId, x.Owner, x.Name }).IsUnique();
+            entity.HasIndex(x => x.TokenHash);
             entity.HasIndex(x => x.TenantId);
             entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });

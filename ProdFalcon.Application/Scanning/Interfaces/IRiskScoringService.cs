@@ -14,4 +14,5 @@ public class RiskScoreResult
     public int MaintainabilityScore { get; set; }
     public int PerformanceScore { get; set; }
     public int ProductionReadinessScore { get; set; }
+    public string RiskLevel { get; set; } = "Low";
 }

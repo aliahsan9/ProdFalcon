@@ -1,8 +1,11 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using ProdFalcon.API.Middleware;
 using ProdFalcon.Application.DependencyInjection;
+using ProdFalcon.Infrastructure.Data;
 using ProdFalcon.Infrastructure.DependencyInjection;
 using Serilog;
 using System.Text;
@@ -42,6 +45,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
+builder.Services.AddHealthChecks();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("scans", limiter =>
+    {
+        limiter.PermitLimit = 10;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+    });
+});
 
 builder.Services.AddCors(options =>
 {
@@ -74,8 +89,17 @@ app.UseCors("Frontend");
 app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.UseMiddleware<SubscriptionValidationMiddleware>();
 app.MapControllers();
+app.MapHealthChecks("/health");
+app.MapGet("/health", async (ApplicationDbContext db) =>
+{
+    var connected = await db.Database.CanConnectAsync();
+    return connected
+        ? Results.Ok(new { status = "Healthy" })
+        : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+}).AllowAnonymous();
 
 var urls = app.Urls.Any()
     ? string.Join(", ", app.Urls)

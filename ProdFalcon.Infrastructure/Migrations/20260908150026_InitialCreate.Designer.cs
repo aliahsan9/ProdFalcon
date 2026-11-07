@@ -12,7 +12,7 @@ using ProdFalcon.Infrastructure.Data;
 namespace ProdFalcon.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260727041654_InitialCreate")]
+    [Migration("20260908150026_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -66,6 +66,9 @@ namespace ProdFalcon.Infrastructure.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -77,6 +80,8 @@ namespace ProdFalcon.Infrastructure.Migrations
                     b.HasIndex("ScanResultId");
 
                     b.HasIndex("Severity");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("ScanIssues");
                 });
@@ -102,6 +107,9 @@ namespace ProdFalcon.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTime>("UploadedAt")
                         .HasColumnType("datetime2");
 
@@ -114,6 +122,8 @@ namespace ProdFalcon.Infrastructure.Migrations
                         .HasColumnType("nvarchar(1024)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
 
                     b.HasIndex("UploadedAt");
 
@@ -160,11 +170,16 @@ namespace ProdFalcon.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
 
                     b.HasIndex("ScanProjectId");
+
+                    b.HasIndex("TenantId");
 
                     b.ToTable("ScanResults");
                 });
@@ -188,6 +203,9 @@ namespace ProdFalcon.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("IsSuperAdmin")
+                        .HasColumnType("bit");
+
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -198,6 +216,143 @@ namespace ProdFalcon.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.AuditLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Metadata")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("Timestamp");
+
+                    b.ToTable("AuditLogs");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.Tenant", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AIUsage")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int?>("OwnerUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Plan")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ScanLimit")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Slug")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<long>("StorageLimit")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("StorageUsed")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerUserId");
+
+                    b.HasIndex("Slug")
+                        .IsUnique();
+
+                    b.ToTable("Tenants");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.TenantMember", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("InviteExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("InviteToken")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("InvitedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("JoinedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("InviteToken");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("TenantId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("TenantMembers");
                 });
 
             modelBuilder.Entity("ProdFalcon.Domain.Entities.UserSubscription", b =>
@@ -225,6 +380,9 @@ namespace ProdFalcon.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int>("Tier")
                         .HasColumnType("int");
 
@@ -234,6 +392,8 @@ namespace ProdFalcon.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("StripeCustomerId");
+
+                    b.HasIndex("TenantId");
 
                     b.HasIndex("UserId");
 
@@ -262,13 +422,50 @@ namespace ProdFalcon.Infrastructure.Migrations
                     b.Navigation("ScanProject");
                 });
 
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.Tenant", b =>
+                {
+                    b.HasOne("ProdFalcon.Domain.Entities.AppUser", "OwnerUser")
+                        .WithMany()
+                        .HasForeignKey("OwnerUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("OwnerUser");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.TenantMember", b =>
+                {
+                    b.HasOne("ProdFalcon.Domain.Entities.Tenant", "Tenant")
+                        .WithMany("Members")
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ProdFalcon.Domain.Entities.AppUser", "User")
+                        .WithMany("Memberships")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Tenant");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("ProdFalcon.Domain.Entities.UserSubscription", b =>
                 {
+                    b.HasOne("ProdFalcon.Domain.Entities.Tenant", "Tenant")
+                        .WithMany()
+                        .HasForeignKey("TenantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("ProdFalcon.Domain.Entities.AppUser", "User")
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Tenant");
 
                     b.Navigation("User");
                 });
@@ -281,6 +478,16 @@ namespace ProdFalcon.Infrastructure.Migrations
             modelBuilder.Entity("ProdFalcon.Application.Scanning.Models.ScanResult", b =>
                 {
                     b.Navigation("Issues");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.AppUser", b =>
+                {
+                    b.Navigation("Memberships");
+                });
+
+            modelBuilder.Entity("ProdFalcon.Domain.Entities.Tenant", b =>
+                {
+                    b.Navigation("Members");
                 });
 #pragma warning restore 612, 618
         }

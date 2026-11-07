@@ -27,4 +27,31 @@ public class ScanIssue : ITenantEntity
     public string RuleName { get; set; } = string.Empty;
 
     public string Category { get; set; } = "General";
+
+    /// <summary>Stable identity for the same issue across scans: rule, path, line, and title.</summary>
+    public string Fingerprint { get; set; } = string.Empty;
+
+    public string Confidence { get; set; } = "High";
+
+    public string? Cwe { get; set; }
+
+    public string? Cve { get; set; }
+
+    /// <summary>Redacted snippet. Full secret values are never stored.</summary>
+    public string Evidence { get; set; } = string.Empty;
+
+    public string Impact { get; set; } = string.Empty;
+
+    public string Remediation { get; set; } = string.Empty;
+
+    public string SecureExample { get; set; } = string.Empty;
+
+    /// <summary>Open, Resolved, or AcceptedRisk.</summary>
+    public string Status { get; set; } = "Open";
+
+    public string DetectionMethod { get; set; } = "Static analysis";
+
+    public string References { get; set; } = string.Empty;
+
+    public string? Notes { get; set; }
 }

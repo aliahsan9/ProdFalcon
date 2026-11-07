@@ -27,5 +27,26 @@ public class ScanResult : BaseEntity, ITenantEntity
 
     public int DurationMs { get; set; }
 
+    public string Stage { get; set; } = string.Empty;
+
+    public string StageMessage { get; set; } = string.Empty;
+
+    public string Technologies { get; set; } = string.Empty;
+
+    public int FileCount { get; set; }
+
+    public string RiskLevel { get; set; } = string.Empty;
+
+    public string ConfigurationJson { get; set; } = string.Empty;
+
+    public string? ErrorMessage { get; set; }
+
+    public int? PreviousScore { get; set; }
+
+    public string? CommitSha { get; set; }
+
+    /// <summary>Project intelligence, architecture, threat model, and rescan comparison.</summary>
+    public string AnalysisDocument { get; set; } = string.Empty;
+
     public List<ScanIssue> Issues { get; set; } = [];
 }

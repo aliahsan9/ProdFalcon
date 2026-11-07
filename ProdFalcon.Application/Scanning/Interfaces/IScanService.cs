@@ -8,4 +8,11 @@ public interface IScanService
         Guid projectId,
         string projectPath,
         CancellationToken cancellationToken = default);
+
+    Task<ScanResultDto> ExecuteQueuedScanAsync(
+        Guid projectId,
+        int scanResultId,
+        string? projectPath,
+        string? accessToken,
+        CancellationToken cancellationToken = default);
 }

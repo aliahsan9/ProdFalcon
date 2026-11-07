@@ -4,7 +4,11 @@ namespace ProdFalcon.Application.Scanning.Interfaces;
 
 public interface IScanRuleExecutor
 {
-    Task<RuleExecutionSummary> ExecuteAllAsync(string projectPath, CancellationToken cancellationToken = default);
+    Task<RuleExecutionSummary> ExecuteAllAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default,
+        ScanModuleSelection? modules = null,
+        Func<string, CancellationToken, Task>? onRuleStarted = null);
 }
 
 public class RuleExecutionSummary

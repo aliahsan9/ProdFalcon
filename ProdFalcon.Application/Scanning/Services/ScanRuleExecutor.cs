@@ -17,7 +17,11 @@ public class ScanRuleExecutor : IScanRuleExecutor
         _logger = logger;
     }
 
-    public async Task<RuleExecutionSummary> ExecuteAllAsync(string projectPath, CancellationToken cancellationToken = default)
+    public async Task<RuleExecutionSummary> ExecuteAllAsync(
+        string projectPath,
+        CancellationToken cancellationToken = default,
+        ScanModuleSelection? modules = null,
+        Func<string, CancellationToken, Task>? onRuleStarted = null)
     {
         var summary = new RuleExecutionSummary();
 
@@ -27,6 +31,20 @@ public class ScanRuleExecutor : IScanRuleExecutor
         foreach (var rule in _rules)
         {
             var ruleName = rule.GetType().Name;
+            if (rule is Rules.IScanModule module && modules != null && !modules.IsEnabled(module.ModuleKey))
+            {
+                summary.Logs.Add(new RuleExecutionLog
+                {
+                    RuleName = ruleName,
+                    Succeeded = true,
+                    Error = "Skipped by scan configuration"
+                });
+                continue;
+            }
+
+            if (onRuleStarted != null)
+                await onRuleStarted(ruleName, cancellationToken);
+
             var stopwatch = Stopwatch.StartNew();
 
             try
@@ -38,7 +56,8 @@ public class ScanRuleExecutor : IScanRuleExecutor
                 {
                     issue.RuleId = string.IsNullOrWhiteSpace(issue.RuleId) ? ruleName : issue.RuleId;
                     issue.RuleName = string.IsNullOrWhiteSpace(issue.RuleName) ? ruleName : issue.RuleName;
-                    issue.Category = ResolveCategory(ruleName);
+                    if (string.IsNullOrWhiteSpace(issue.Category) || issue.Category == "General")
+                        issue.Category = ResolveCategory(ruleName);
                 }
 
                 if (issues.Count > 0)
@@ -55,6 +74,10 @@ public class ScanRuleExecutor : IScanRuleExecutor
                 _logger.LogInformation(
                     "Rule {RuleName} completed in {DurationMs}ms with {IssueCount} issues",
                     ruleName, stopwatch.ElapsedMilliseconds, issues.Count);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -80,13 +103,17 @@ public class ScanRuleExecutor : IScanRuleExecutor
             nameof(Rules.ApiKeyExposureRule) or
             nameof(Rules.HardcodedConnectionStringRule) or
             nameof(Rules.HardcodedJwtSecretRule) or
-            nameof(Rules.SqlInjectionRiskRule) or
-            nameof(Rules.PlainTextPasswordRule) or
+            nameof(Rules.PlainTextPasswordRule) => "Secrets",
+            nameof(Rules.SqlInjectionRiskRule) => "Injection",
+            nameof(Rules.MissingAuthorizationRule) => "Authentication",
             nameof(Rules.CorsWildcardRule) or
-            nameof(Rules.MissingAuthorizationRule) => "Security",
-            nameof(Rules.HttpUsageRule) or nameof(Rules.DebugModeRule) => "Performance",
-            nameof(Rules.MissingLoggingRule) or nameof(Rules.SensitiveLoggingRule) => "Maintainability",
-            nameof(Rules.SwaggerInProductionRule) => "Production",
-            _ => "General"
+            nameof(Rules.SwaggerInProductionRule) or
+            nameof(Rules.ConfigurationSecurityRule) or
+            nameof(Rules.DebugModeRule) => "Configuration",
+            nameof(Rules.HttpUsageRule) => "Performance",
+            nameof(Rules.MissingLoggingRule) or
+            nameof(Rules.SensitiveLoggingRule) or
+            nameof(Rules.CodeQualityRule) => "Quality",
+            _ => "Security"
         };
 }

@@ -1,7 +1,9 @@
-using System.IO.Compression;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using ProdFalcon.Application.Interfaces;
+using ProdFalcon.Application.Scanning;
+using ProdFalcon.Application.Scanning.Security;
 
 namespace ProdFalcon.Infrastructure.Services;
 
@@ -9,14 +11,22 @@ public class ProjectStorageService : IProjectStorageService
 {
     private readonly ILogger<ProjectStorageService> _logger;
     private readonly ITenantProvider _tenantProvider;
+    private readonly ZipSafetyLimits _zipLimits;
 
     public ProjectStorageService(
         IConfiguration configuration,
         ILogger<ProjectStorageService> logger,
-        ITenantProvider tenantProvider)
+        ITenantProvider tenantProvider,
+        IOptions<ScanLimitsOptions> limits)
     {
         _logger = logger;
         _tenantProvider = tenantProvider;
+        _zipLimits = new ZipSafetyLimits
+        {
+            MaxExtractedBytes = limits.Value.MaxExtractedBytes,
+            MaxEntries = limits.Value.MaxEntries,
+            MaxCompressionRatio = limits.Value.MaxCompressionRatio
+        };
         StorageRoot = ResolveStorageRoot(configuration);
         Directory.CreateDirectory(StorageRoot);
     }
@@ -57,7 +67,7 @@ public class ProjectStorageService : IProjectStorageService
 
         Directory.CreateDirectory(extractPath);
 
-        await Task.Run(() => ZipFile.ExtractToDirectory(zipPath, extractPath, overwriteFiles: true), cancellationToken);
+        await Task.Run(() => SafeZipExtractor.Extract(zipPath, extractPath, _zipLimits), cancellationToken);
         return extractPath;
     }
 
@@ -68,13 +78,16 @@ public class ProjectStorageService : IProjectStorageService
 
         try
         {
-            await using var stream = File.OpenRead(zipPath);
-            using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
-            return archive.Entries.Count > 0;
+            await Task.Run(() => SafeZipExtractor.Validate(zipPath, _zipLimits), cancellationToken);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "ZIP validation failed for {ZipPath}", zipPath);
+            _logger.LogWarning(ex, "ZIP validation failed");
             return false;
         }
     }

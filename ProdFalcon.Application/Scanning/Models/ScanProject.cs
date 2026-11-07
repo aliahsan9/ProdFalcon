@@ -20,5 +20,18 @@ public class ScanProject : ITenantEntity
 
     public int? UserId { get; set; }
 
+    /// <summary>Zip or GitHub.</summary>
+    public string SourceType { get; set; } = "Zip";
+
+    public string? RepositoryUrl { get; set; }
+
+    public string? Branch { get; set; }
+
+    public string? CommitSha { get; set; }
+
+    public string? DisplayName { get; set; }
+
+    public string DetectedTechnologies { get; set; } = string.Empty;
+
     public List<ScanResult> Results { get; set; } = [];
 }

@@ -29,14 +29,13 @@ public class GitHubIntegrationService : IGitHubIntegrationService
             pullRequestNumber);
 
         throw new NotImplementedException(
-            "GitHub PR analysis requires repository clone integration. Configure GitHub App credentials to enable.");
+            "Pull request analysis runs through the GitHub Actions workflow and POST /api/github/ci. This method does not clone a repository.");
     }
 
     public Task<string> CreateAutoFixPullRequestAsync(int scanResultId, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Auto-fix PR stub for scan result {ScanResultId}", scanResultId);
-
-        var prUrl = $"https://github.com/example/repo/pull/auto-fix-{scanResultId}";
-        return Task.FromResult(prUrl);
+        _logger.LogInformation("Auto-fix was requested for scan result {ScanResultId} and refused", scanResultId);
+        throw new NotImplementedException(
+            "Automatic pull requests are not implemented. ProdFalcon does not open a pull request or invent a URL.");
     }
 }

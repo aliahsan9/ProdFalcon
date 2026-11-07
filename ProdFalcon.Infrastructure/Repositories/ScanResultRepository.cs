@@ -44,4 +44,34 @@ public class ScanResultRepository : IScanResultRepository
             .Take(take)
             .AsNoTracking()
             .ToListAsync(cancellationToken);
+
+    public async Task<ScanResult> UpdateGraphAsync(ScanResult result, CancellationToken cancellationToken = default)
+    {
+        await _db.SaveChangesAsync(cancellationToken);
+        return await _db.ScanResults
+            .Include(r => r.Issues)
+            .FirstAsync(r => r.Id == result.Id, cancellationToken);
+    }
+
+    public async Task UpdateStageAsync(int id, string status, string stage, string message, CancellationToken cancellationToken = default)
+    {
+        var row = await _db.ScanResults.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+        if (row == null)
+            return;
+
+        row.Status = status;
+        row.Stage = stage;
+        row.StageMessage = message.Length <= 500 ? message : message[..500];
+        await _db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetErrorAsync(int id, string message, CancellationToken cancellationToken = default)
+    {
+        var row = await _db.ScanResults.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
+        if (row == null)
+            return;
+
+        row.ErrorMessage = message;
+        await _db.SaveChangesAsync(cancellationToken);
+    }
 }

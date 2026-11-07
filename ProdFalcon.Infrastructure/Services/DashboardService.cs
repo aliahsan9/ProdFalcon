@@ -40,18 +40,11 @@ public class DashboardService : IDashboardService
             string.Equals(i.Severity, "Critical", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(i.Severity, "High", StringComparison.OrdinalIgnoreCase));
 
-        var smellDensity = results.Count == 0
-            ? 0
-            : Math.Min(100, issues.Count * 4.0 / Math.Max(1, results.Count));
-
-        var architecture = Math.Round((avgMaintainability + avgPerformance) / 2.0, 1);
-        var documentation = Math.Round(Clamp(avgMaintainability - (issues.Count(i =>
-            i.Category.Contains("doc", StringComparison.OrdinalIgnoreCase)) * 2)), 1);
-        var testCoverage = Math.Round(Clamp(avgMaintainability - 8 + (avgScore / 20)), 1);
-        var technicalDebt = Math.Round(Clamp(100 - smellDensity - (criticalHigh * 1.5)), 1);
-        var codeSmells = Math.Round(Clamp(100 - smellDensity), 1);
-        var complexity = Math.Round(Clamp((avgPerformance + avgMaintainability) / 2.0), 1);
-        var bugRisk = Math.Round(Clamp(100 - avgSecurity - (criticalHigh * 0.8)), 1);
+        var scoring = new Application.Scanning.Services.RiskScoringService();
+        var architecture = scoring.Calculate(issues.Where(i => i.Category.Equals("Architecture", StringComparison.OrdinalIgnoreCase))).OverallScore;
+        var complexity = scoring.Calculate(issues.Where(i => i.RuleId.Contains("COMPLEX", StringComparison.OrdinalIgnoreCase))).OverallScore;
+        var technicalDebt = avgMaintainability;
+        var codeSmells = avgMaintainability;
 
         var recommendations = BuildRecommendations(
             avgSecurity, avgMaintainability, avgPerformance, avgProduction, criticalHigh, issues.Count);
@@ -67,12 +60,12 @@ public class DashboardService : IDashboardService
             AveragePerformanceScore = avgPerformance,
             AverageProductionReadinessScore = avgProduction,
             ArchitectureScore = architecture,
-            DocumentationScore = documentation,
-            TestCoverageScore = testCoverage,
+            DocumentationScore = -1,
+            TestCoverageScore = -1,
             TechnicalDebtScore = technicalDebt,
             CodeSmellsScore = codeSmells,
             ComplexityScore = complexity,
-            BugRiskScore = bugRisk,
+            BugRiskScore = -1,
             IssuesBySeverity = issues
                 .GroupBy(i => i.Severity)
                 .ToDictionary(g => g.Key, g => g.Count()),
@@ -84,7 +77,14 @@ public class DashboardService : IDashboardService
                 .OrderByDescending(g => g.Count())
                 .Take(10)
                 .ToDictionary(g => g.Key, g => g.Count()),
-            AiRecommendations = recommendations
+            AiRecommendations = recommendations,
+            CriticalVulnerabilities = CountOpen(issues, "Critical"),
+            HighVulnerabilities = CountOpen(issues, "High"),
+            MediumVulnerabilities = CountOpen(issues, "Medium"),
+            LowVulnerabilities = CountOpen(issues, "Low"),
+            InformationalFindings = issues.Count(i => IsOpen(i) && (IsSeverity(i, "Info") || IsSeverity(i, "Informational"))),
+            ResolvedIssues = issues.Count(i => string.Equals(i.Status, "Resolved", StringComparison.OrdinalIgnoreCase)),
+            OpenIssues = issues.Count(IsOpen)
         };
 
         _logger.LogInformation(
@@ -131,8 +131,14 @@ public class DashboardService : IDashboardService
                 LatestProductionReadinessScore = latest?.ProductionReadinessScore ?? 0,
                 LatestScanResultId = latest?.Id ?? 0,
                 ScanCount = p.Results.Count,
-                IssueCount = p.Results.SelectMany(r => r.Issues).Count(),
-                Trend = trend
+                IssueCount = p.Results.SelectMany(r => r.Issues).Count(i => !string.Equals(i.Status, "Resolved", StringComparison.OrdinalIgnoreCase)),
+                Trend = trend,
+                SourceType = p.SourceType,
+                RepositoryUrl = p.RepositoryUrl,
+                Branch = p.Branch,
+                DisplayName = string.IsNullOrWhiteSpace(p.DisplayName) ? p.FileName : p.DisplayName,
+                LatestDurationMs = latest?.DurationMs ?? 0,
+                LatestStatus = latest?.Status ?? p.Status
             };
         }).ToList();
     }
@@ -160,7 +166,15 @@ public class DashboardService : IDashboardService
             .ToList();
     }
 
-    private static double Clamp(double value) => Math.Max(0, Math.Min(100, value));
+    private static bool IsOpen(Application.Scanning.Models.ScanIssue issue) =>
+        !string.Equals(issue.Status, "Resolved", StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(issue.Status, "AcceptedRisk", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSeverity(Application.Scanning.Models.ScanIssue issue, string severity) =>
+        string.Equals(issue.Severity, severity, StringComparison.OrdinalIgnoreCase);
+
+    private static int CountOpen(List<Application.Scanning.Models.ScanIssue> issues, string severity) =>
+        issues.Count(i => IsOpen(i) && IsSeverity(i, severity));
 
     private static IReadOnlyList<string> BuildRecommendations(
         double security,

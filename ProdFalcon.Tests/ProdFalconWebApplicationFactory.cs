@@ -4,6 +4,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using ProdFalcon.Infrastructure.Data;
 
 namespace ProdFalcon.Tests;
@@ -28,6 +29,9 @@ public class ProdFalconWebApplicationFactory : WebApplicationFactory<Program>
 
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlite(_connection));
+
+            // Background workers share this in-memory database and race with requests.
+            services.RemoveAll<IHostedService>();
         });
     }
 

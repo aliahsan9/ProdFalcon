@@ -3,8 +3,9 @@ using ProdFalcon.Application.Scanning.Models;
 
 namespace ProdFalcon.Application.Scanning.Rules;
 
-public class CorsWildcardRule : IScanRule
+public class CorsWildcardRule : IScanRule, IScanModule
 {
+    public string ModuleKey => ScanModules.Configuration;
     public async Task<List<ScanIssue>> EvaluateAsync(string projectPath, CancellationToken cancellationToken)
     {
         var issues = new List<ScanIssue>();
@@ -12,7 +13,7 @@ public class CorsWildcardRule : IScanRule
         if (string.IsNullOrWhiteSpace(projectPath) || !Directory.Exists(projectPath))
             return issues;
 
-        var files = Directory.GetFiles(projectPath, "*.*", SearchOption.AllDirectories);
+        var files = SourceTree.EnumerateSourceFiles(projectPath);
 
         foreach (var file in files)
         {

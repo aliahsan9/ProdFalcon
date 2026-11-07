@@ -32,5 +32,8 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IScanRule, PlainTextPasswordRule>();
         services.AddScoped<IScanRule, SwaggerInProductionRule>();
         services.AddScoped<IScanRule, MissingLoggingRule>();
+        services.AddScoped<IScanRule, ConfigurationSecurityRule>();
+        services.AddScoped<IScanRule, CodeQualityRule>();
+        services.AddScoped<IScanRule, ExtendedStaticAnalysisRule>();
     }
 }

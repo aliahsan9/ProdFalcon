@@ -3,8 +3,9 @@ using ProdFalcon.Application.Scanning.Models;
 
 namespace ProdFalcon.Application.Scanning.Rules;
 
-public class HttpUsageRule : IScanRule
+public class HttpUsageRule : IScanRule, IScanModule
 {
+    public string ModuleKey => ScanModules.StaticAnalysis;
     public async Task<List<ScanIssue>> EvaluateAsync(string projectPath, CancellationToken cancellationToken)
     {
         var issues = new List<ScanIssue>();
@@ -12,7 +13,7 @@ public class HttpUsageRule : IScanRule
         if (string.IsNullOrWhiteSpace(projectPath) || !Directory.Exists(projectPath))
             return issues;
 
-        var files = Directory.GetFiles(projectPath, "*.*", SearchOption.AllDirectories);
+        var files = SourceTree.EnumerateSourceFiles(projectPath);
 
         foreach (var file in files)
         {

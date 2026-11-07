@@ -33,6 +33,23 @@ public class AiController : ControllerBase
             return NotFound(ApiResponse<AiSuggestionsResponse>.Fail("Scan result not found."));
         }
     }
+
+    [HttpPost("ask")]
+    public async Task<IActionResult> Ask([FromBody] AiAskRequest request, CancellationToken cancellationToken)
+    {
+        if (request.ScanResultId <= 0 || string.IsNullOrWhiteSpace(request.Question))
+            return BadRequest(ApiResponse<AiAskResponse>.Fail("A scan and a question are required."));
+
+        try
+        {
+            var answer = await _suggestionService.AskAsync(request, cancellationToken);
+            return Ok(ApiResponse<AiAskResponse>.Ok(answer));
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound(ApiResponse<AiAskResponse>.Fail("Scan result not found."));
+        }
+    }
 }
 
 public class AiSuggestionRequest

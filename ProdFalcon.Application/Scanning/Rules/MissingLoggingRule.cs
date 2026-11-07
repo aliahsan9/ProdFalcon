@@ -3,8 +3,9 @@ using ProdFalcon.Application.Scanning.Models;
 
 namespace ProdFalcon.Application.Scanning.Rules;
 
-public class MissingLoggingRule : IScanRule
+public class MissingLoggingRule : IScanRule, IScanModule
 {
+    public string ModuleKey => ScanModules.Quality;
     public async Task<List<ScanIssue>> EvaluateAsync(string projectPath, CancellationToken cancellationToken)
     {
         var issues = new List<ScanIssue>();
@@ -12,7 +13,7 @@ public class MissingLoggingRule : IScanRule
         if (string.IsNullOrWhiteSpace(projectPath) || !Directory.Exists(projectPath))
             return issues;
 
-        var files = Directory.GetFiles(projectPath, "*Controller*.cs", SearchOption.AllDirectories);
+        var files = SourceTree.EnumerateSourceFiles(projectPath, "*Controller*.cs");
 
         foreach (var file in files)
         {
