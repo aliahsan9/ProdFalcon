@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using ProdFalcon.Application.Scanning.Interfaces;
 using ProdFalcon.Shared.Responses;
 
@@ -7,6 +8,7 @@ namespace ProdFalcon.API.Controllers;
 
 [Authorize]
 [ApiController]
+[EnableRateLimiting("ai")]
 [Route("api/ai")]
 public class AiController : ControllerBase
 {
