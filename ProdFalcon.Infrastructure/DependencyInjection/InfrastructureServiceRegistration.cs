@@ -24,7 +24,14 @@ public static class InfrastructureServiceRegistration
         services.AddHttpContextAccessor();
 
         services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseSqlServer(configuration.GetConnectionString("DefaultConnection")));
+            options.UseSqlServer(
+                configuration.GetConnectionString("DefaultConnection"),
+                sql =>
+                {
+                    sql.CommandTimeout(60);
+                    // Parent rows such as ScanResult.AnalysisDocument must not be repeated once per issue.
+                    sql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+                }));
 
         services.Configure<ScanLimitsOptions>(configuration.GetSection(ScanLimitsOptions.SectionName));
 

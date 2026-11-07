@@ -19,22 +19,30 @@ public class DashboardService : IDashboardService
     public async Task<DashboardSummaryDto> GetSummaryAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Building dashboard summary");
+        _db.Database.SetCommandTimeout(30);
 
-        var results = await _db.ScanResults
-            .Include(r => r.Issues)
+        var scores = await _db.ScanResults
             .AsNoTracking()
+            .Select(r => new
+            {
+                r.Score,
+                r.SecurityScore,
+                r.MaintainabilityScore,
+                r.PerformanceScore,
+                r.ProductionReadinessScore
+            })
             .ToListAsync(cancellationToken);
 
-        var issues = results.SelectMany(r => r.Issues).ToList();
+        var issues = await LoadIssueFactsAsync(cancellationToken);
 
-        static double AvgOrZero(IReadOnlyList<Application.Scanning.Models.ScanResult> list, Func<Application.Scanning.Models.ScanResult, int> selector) =>
-            list.Count == 0 ? 0 : Math.Round(list.Average(r => selector(r)), 1);
+        static double AvgOrZero(IReadOnlyList<int> values) =>
+            values.Count == 0 ? 0 : Math.Round(values.Average(), 1);
 
-        var avgScore = AvgOrZero(results, r => r.Score);
-        var avgSecurity = AvgOrZero(results, r => r.SecurityScore);
-        var avgMaintainability = AvgOrZero(results, r => r.MaintainabilityScore);
-        var avgPerformance = AvgOrZero(results, r => r.PerformanceScore);
-        var avgProduction = AvgOrZero(results, r => r.ProductionReadinessScore);
+        var avgScore = AvgOrZero(scores.Select(r => r.Score).ToList());
+        var avgSecurity = AvgOrZero(scores.Select(r => r.SecurityScore).ToList());
+        var avgMaintainability = AvgOrZero(scores.Select(r => r.MaintainabilityScore).ToList());
+        var avgPerformance = AvgOrZero(scores.Select(r => r.PerformanceScore).ToList());
+        var avgProduction = AvgOrZero(scores.Select(r => r.ProductionReadinessScore).ToList());
 
         var criticalHigh = issues.Count(i =>
             string.Equals(i.Severity, "Critical", StringComparison.OrdinalIgnoreCase) ||
@@ -52,7 +60,7 @@ public class DashboardService : IDashboardService
         var summary = new DashboardSummaryDto
         {
             TotalProjects = await _db.ScanProjects.CountAsync(cancellationToken),
-            TotalScans = results.Count,
+            TotalScans = scores.Count,
             TotalIssues = issues.Count,
             AverageScore = avgScore,
             AverageSecurityScore = avgSecurity,
@@ -97,25 +105,44 @@ public class DashboardService : IDashboardService
     public async Task<IReadOnlyList<ProjectDashboardDto>> GetProjectsAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Loading dashboard projects");
+        _db.Database.SetCommandTimeout(30);
 
         var projects = await _db.ScanProjects
-            .Include(p => p.Results)
-            .ThenInclude(r => r.Issues)
             .AsNoTracking()
             .OrderByDescending(p => p.UploadedAt)
+            .Select(p => new
+            {
+                p.Id,
+                p.FileName,
+                p.UploadedAt,
+                p.Status,
+                p.SourceType,
+                p.RepositoryUrl,
+                p.Branch,
+                p.DisplayName,
+                ScanCount = p.Results.Count,
+                IssueCount = p.Results
+                    .SelectMany(r => r.Issues)
+                    .Count(i => i.Status == null || i.Status.ToLower() != "resolved"),
+                LatestId = p.Results.OrderByDescending(r => r.CreatedAt).Select(r => (int?)r.Id).FirstOrDefault(),
+                LatestScore = p.Results.OrderByDescending(r => r.CreatedAt).Select(r => (int?)r.Score).FirstOrDefault(),
+                LatestSecurityScore = p.Results.OrderByDescending(r => r.CreatedAt).Select(r => (int?)r.SecurityScore).FirstOrDefault(),
+                LatestMaintainabilityScore = p.Results.OrderByDescending(r => r.CreatedAt).Select(r => (int?)r.MaintainabilityScore).FirstOrDefault(),
+                LatestPerformanceScore = p.Results.OrderByDescending(r => r.CreatedAt).Select(r => (int?)r.PerformanceScore).FirstOrDefault(),
+                LatestProductionReadinessScore = p.Results.OrderByDescending(r => r.CreatedAt).Select(r => (int?)r.ProductionReadinessScore).FirstOrDefault(),
+                LatestDurationMs = p.Results.OrderByDescending(r => r.CreatedAt).Select(r => (int?)r.DurationMs).FirstOrDefault(),
+                LatestStatus = p.Results.OrderByDescending(r => r.CreatedAt).Select(r => r.Status).FirstOrDefault(),
+                PreviousScore = p.Results.OrderByDescending(r => r.CreatedAt).Skip(1).Select(r => (int?)r.Score).FirstOrDefault()
+            })
             .ToListAsync(cancellationToken);
 
         return projects.Select(p =>
         {
-            var ordered = p.Results.OrderByDescending(r => r.CreatedAt).ToList();
-            var latest = ordered.FirstOrDefault();
-            var previous = ordered.Skip(1).FirstOrDefault();
-
             var trend = "Stable";
-            if (latest != null && previous != null)
+            if (p.LatestScore.HasValue && p.PreviousScore.HasValue)
             {
-                if (latest.Score > previous.Score) trend = "Improving";
-                else if (latest.Score < previous.Score) trend = "Degrading";
+                if (p.LatestScore.Value > p.PreviousScore.Value) trend = "Improving";
+                else if (p.LatestScore.Value < p.PreviousScore.Value) trend = "Degrading";
             }
 
             return new ProjectDashboardDto
@@ -124,21 +151,21 @@ public class DashboardService : IDashboardService
                 FileName = p.FileName,
                 UploadedAt = p.UploadedAt,
                 Status = p.Status,
-                LatestScore = latest?.Score ?? 0,
-                LatestSecurityScore = latest?.SecurityScore ?? 0,
-                LatestMaintainabilityScore = latest?.MaintainabilityScore ?? 0,
-                LatestPerformanceScore = latest?.PerformanceScore ?? 0,
-                LatestProductionReadinessScore = latest?.ProductionReadinessScore ?? 0,
-                LatestScanResultId = latest?.Id ?? 0,
-                ScanCount = p.Results.Count,
-                IssueCount = p.Results.SelectMany(r => r.Issues).Count(i => !string.Equals(i.Status, "Resolved", StringComparison.OrdinalIgnoreCase)),
+                LatestScore = p.LatestScore ?? 0,
+                LatestSecurityScore = p.LatestSecurityScore ?? 0,
+                LatestMaintainabilityScore = p.LatestMaintainabilityScore ?? 0,
+                LatestPerformanceScore = p.LatestPerformanceScore ?? 0,
+                LatestProductionReadinessScore = p.LatestProductionReadinessScore ?? 0,
+                LatestScanResultId = p.LatestId ?? 0,
+                ScanCount = p.ScanCount,
+                IssueCount = p.IssueCount,
                 Trend = trend,
                 SourceType = p.SourceType,
                 RepositoryUrl = p.RepositoryUrl,
                 Branch = p.Branch,
                 DisplayName = string.IsNullOrWhiteSpace(p.DisplayName) ? p.FileName : p.DisplayName,
-                LatestDurationMs = latest?.DurationMs ?? 0,
-                LatestStatus = latest?.Status ?? p.Status
+                LatestDurationMs = p.LatestDurationMs ?? 0,
+                LatestStatus = p.LatestStatus ?? p.Status
             };
         }).ToList();
     }
@@ -146,11 +173,17 @@ public class DashboardService : IDashboardService
     public async Task<IReadOnlyList<ScanTrendDto>> GetTrendsAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Loading scan trends");
+        _db.Database.SetCommandTimeout(30);
 
         var results = await _db.ScanResults
-            .Include(r => r.Issues)
             .AsNoTracking()
             .OrderBy(r => r.CreatedAt)
+            .Select(r => new
+            {
+                r.CreatedAt,
+                r.Score,
+                IssueCount = r.Issues.Count
+            })
             .ToListAsync(cancellationToken);
 
         return results
@@ -160,10 +193,40 @@ public class DashboardService : IDashboardService
                 Date = g.Key,
                 AverageScore = Math.Round(g.Average(r => r.Score), 1),
                 ScanCount = g.Count(),
-                IssueCount = g.Sum(r => r.Issues.Count)
+                IssueCount = g.Sum(r => r.IssueCount)
             })
             .OrderBy(t => t.Date)
             .ToList();
+    }
+
+    /// <summary>
+    /// Dashboard math only needs severity, category, and status. Loading full issue rows
+    /// joins them to ScanResult and repeats AnalysisDocument once per finding.
+    /// </summary>
+    private async Task<List<Application.Scanning.Models.ScanIssue>> LoadIssueFactsAsync(CancellationToken cancellationToken)
+    {
+        var rows = await _db.ScanIssues
+            .AsNoTracking()
+            .Select(i => new
+            {
+                i.Severity,
+                i.Category,
+                i.RuleName,
+                i.RuleId,
+                i.Status,
+                i.Confidence
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(i => new Application.Scanning.Models.ScanIssue
+        {
+            Severity = i.Severity ?? "Info",
+            Category = string.IsNullOrWhiteSpace(i.Category) ? "General" : i.Category,
+            RuleName = i.RuleName ?? string.Empty,
+            RuleId = i.RuleId ?? string.Empty,
+            Status = i.Status ?? "Open",
+            Confidence = string.IsNullOrWhiteSpace(i.Confidence) ? "High" : i.Confidence
+        }).ToList();
     }
 
     private static bool IsOpen(Application.Scanning.Models.ScanIssue issue) =>
