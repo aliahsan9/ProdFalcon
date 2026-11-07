@@ -8,6 +8,7 @@ using ProdFalcon.Application.Scanning.Performance;
 using ProdFalcon.Application.Scanning.Quality;
 using ProdFalcon.Application.Scanning.Remediation;
 using ProdFalcon.Application.Scanning.Rules;
+using ProdFalcon.Application.Scanning.Security;
 
 namespace ProdFalcon.Tests;
 
@@ -243,6 +244,39 @@ public class IntelligenceAndQualityTests
               </ItemGroup>
             </Project>
             """);
+    }
+
+    [Fact]
+    public async Task Public_HelloWorld_archive_is_analyzed_from_its_files()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "pf-hello-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var zip = Path.Combine(root, "repo.zip");
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(40) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd("ProdFalcon-tests");
+            await using (var remote = await http.GetStreamAsync("https://codeload.github.com/octocat/Hello-World/zip/refs/heads/master"))
+            await using (var local = File.Create(zip))
+                await remote.CopyToAsync(local);
+
+            var extracted = Path.Combine(root, "src");
+            SafeZipExtractor.Extract(zip, extracted, new ZipSafetyLimits());
+            Assert.NotEmpty(Directory.EnumerateFiles(extracted, "*", SearchOption.AllDirectories));
+
+            var analysis = ProjectAnalysisPipeline.Analyze(extracted);
+            Assert.False(string.IsNullOrWhiteSpace(analysis.Profile.Purpose));
+            Assert.NotEmpty(analysis.Profile.Answers);
+            Assert.Empty(analysis.Profile.Endpoints);
+            Assert.DoesNotContain(analysis.Profile.Components, component => component.Type.Contains("Database", StringComparison.OrdinalIgnoreCase));
+            Assert.All(analysis.Architecture.Edges, edge => Assert.True(edge.Kind is "Detected" or "Uncertain"));
+            Assert.All(analysis.Threats.Threats, threat => Assert.False(threat.ExploitConfirmed));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, true);
+        }
     }
 
     private static string Temp()
