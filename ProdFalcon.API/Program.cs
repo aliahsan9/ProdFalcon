@@ -156,7 +156,11 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("Frontend");
-app.UseHttpsRedirection();
+// The Angular dev server proxies to http://localhost:5014. Redirecting that
+// request to https://localhost:7036 drops Authorization, so /api/projects
+// returns 401 immediately after a successful login.
+if (!app.Environment.IsDevelopment() && !app.Environment.IsEnvironment("Testing"))
+    app.UseHttpsRedirection();
 app.UseAuthentication();
 app.UseAuthorization();
 
