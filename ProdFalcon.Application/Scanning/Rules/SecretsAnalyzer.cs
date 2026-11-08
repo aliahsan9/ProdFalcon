@@ -38,7 +38,7 @@ public static class SecretsAnalyzer
         foreach (var (pattern, category, severity, cwe, title) in Patterns)
         {
             foreach (Match match in pattern.Matches(content))
-                issues.Add(Create(filePath, content, match.Index, title, severity, category, cwe, match.Value, "High"));
+                issues.Add(Create(filePath, content, match.Index, title, severity, category, cwe, match.Value, "High", "SEC-SECRET-001", nameof(ApiKeyExposureRule)));
         }
 
         foreach (Match match in AssignedSecret.Matches(content))
@@ -47,14 +47,19 @@ public static class SecretsAnalyzer
             if (SecretRedactor.IsPlaceholder(value) || ShannonEntropy(value) < 3.4)
                 continue;
 
+            var name = match.Groups[1].Value;
+            var jwt = name.Contains("jwt", StringComparison.OrdinalIgnoreCase) ||
+                      name.Contains("signing", StringComparison.OrdinalIgnoreCase);
             issues.Add(Create(
                 filePath, content, match.Index,
-                "Hardcoded secret assignment",
+                jwt ? "Hardcoded JWT signing key" : "Hardcoded secret assignment",
                 "High",
-                match.Groups[1].Value,
+                name,
                 "CWE-798",
                 value,
-                "Medium"));
+                "Medium",
+                jwt ? "SEC-JWT-001" : "SEC-SECRET-001",
+                jwt ? nameof(HardcodedJwtSecretRule) : nameof(ApiKeyExposureRule)));
         }
 
         foreach (Match match in PasswordAssignment.Matches(content))
@@ -70,7 +75,9 @@ public static class SecretsAnalyzer
                 "Password",
                 "CWE-798",
                 value,
-                "High"));
+                "High",
+                "SEC-PWD-001",
+                nameof(PlainTextPasswordRule)));
         }
 
         foreach (Match match in ConnectionPassword.Matches(content))
@@ -91,7 +98,9 @@ public static class SecretsAnalyzer
                 "Database credential",
                 "CWE-798",
                 value,
-                "High"));
+                "High",
+                "SEC-CONN-001",
+                nameof(HardcodedConnectionStringRule)));
         }
 
         return Dedupe(issues);
@@ -120,11 +129,13 @@ public static class SecretsAnalyzer
         string category,
         string cwe,
         string secret,
-        string confidence) =>
+        string confidence,
+        string ruleId,
+        string ruleName) =>
         new()
         {
-            RuleId = "SEC-SECRET-001",
-            RuleName = nameof(ApiKeyExposureRule),
+            RuleId = ruleId,
+            RuleName = ruleName,
             Title = title,
             Severity = severity,
             Category = "Secrets",
@@ -134,13 +145,27 @@ public static class SecretsAnalyzer
             Cwe = cwe,
             DetectionMethod = "Pattern and entropy",
             Description = $"A {category} appears to be stored in source. The value was redacted.",
-            Evidence = SecretRedactor.Describe(category, secret),
+            Evidence = RedactedLine(content, index, secret) + " " + SecretRedactor.Describe(category, secret),
             Impact = "Anyone with repository or artifact access can reuse this credential.",
             Remediation = "Revoke the exposed credential, remove it from source and history, and load it from a secret store or environment variable at runtime.",
-            SecureExample = "var apiKey = configuration[\"Integrations:ApiKey\"]; // supplied by the host, not source control",
-            References = "https://owasp.org/www-community/vulnerabilities/Use_of_hard-coded_password",
+            SecureExample = "var apiKey = configuration[\"Integrations:ApiKey\"];",
+            References = "OWASP A07:2021 https://owasp.org/www-community/vulnerabilities/Use_of_hard-coded_password",
             Status = "Open"
         };
+
+    private static string RedactedLine(string content, int index, string secret)
+    {
+        var start = index == 0 ? 0 : content.LastIndexOf('\n', Math.Max(0, index - 1)) + 1;
+        var end = content.IndexOf('\n', index);
+        if (end < 0)
+            end = content.Length;
+
+        var line = content[start..end].Trim();
+        if (!string.IsNullOrEmpty(secret))
+            line = line.Replace(secret, "[redacted]", StringComparison.Ordinal);
+
+        return line.Length <= 180 ? line : line[..180] + "...";
+    }
 
     internal static double ShannonEntropy(string value)
     {

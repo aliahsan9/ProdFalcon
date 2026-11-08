@@ -46,22 +46,28 @@ public class OpenAiSuggestionService : IOpenAiSuggestionService
         {
             var prompt = BuildPrompt(scanResult);
             var client = _httpClientFactory.CreateClient("OpenAI");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
             var payload = new
             {
                 model = _configuration["OpenAI:Model"] ?? "gpt-4o-mini",
                 messages = new[]
                 {
-                    new { role = "system", content = "You are a senior .NET architect. Return concise JSON only." },
+                    new
+                    {
+                        role = "system",
+                        content = """
+                            You explain findings that were already detected by static rules. Return concise JSON only.
+                            Do not invent vulnerabilities, files, or line numbers. Do not repeat secret values.
+                            If the findings do not support a claim, say the scan did not establish it.
+                            """
+                    },
                     new { role = "user", content = prompt }
                 },
                 temperature = 0.2
             };
 
             var json = JsonSerializer.Serialize(payload);
-            using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var response = await client.PostAsync("chat/completions", content, cancellationToken);
+            var response = await PostChatAsync(client, apiKey, json, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -87,13 +93,12 @@ public class OpenAiSuggestionService : IOpenAiSuggestionService
     private static string BuildPrompt(ProdFalcon.Application.Scanning.Models.ScanResult scanResult)
     {
         var issues = scanResult.Issues.Take(40).Select(i =>
-            $"- [{i.Severity}] {i.Title} ({i.RuleName}) in {i.FilePath}");
+            $"- [{i.Severity}] {i.Title} ({i.RuleId}) {i.FilePath}:{i.LineNumber}. {Trim(i.Description, 240)} Evidence: {Trim(i.Evidence, 180)} Remediation: {Trim(i.Remediation, 240)}");
 
         return $"""
             Analyze this scan and return JSON with keys:
             fixSuggestions, refactoringRecommendations, securityImprovements, productionReadinessAdvice, summary
 
-            Project path: {scanResult.ProjectPath}
             Overall score: {scanResult.Score}/100
             Security: {scanResult.SecurityScore}
             Maintainability: {scanResult.MaintainabilityScore}
@@ -221,7 +226,6 @@ public class OpenAiSuggestionService : IOpenAiSuggestionService
         try
         {
             var client = _httpClientFactory.CreateClient("OpenAI");
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             var payload = new
             {
                 model = _configuration["OpenAI:Model"] ?? "gpt-4o-mini",
@@ -242,8 +246,7 @@ public class OpenAiSuggestionService : IOpenAiSuggestionService
                 }
             };
 
-            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var response = await client.PostAsync("chat/completions", content, cancellationToken);
+            var response = await PostChatAsync(client, apiKey, JsonSerializer.Serialize(payload), cancellationToken);
             response.EnsureSuccessStatusCode();
             using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
@@ -272,6 +275,36 @@ public class OpenAiSuggestionService : IOpenAiSuggestionService
             await RememberAsync(scanResult, "assistant", fallback.Answer, cancellationToken);
             return fallback;
         }
+    }
+
+    private static async Task<HttpResponseMessage> PostChatAsync(HttpClient client, string apiKey, string json, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "chat/completions");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await client.SendAsync(request, cancellationToken);
+            if (attempt == 0 && ((int)response.StatusCode == 429 || (int)response.StatusCode >= 500))
+            {
+                response.Dispose();
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                continue;
+            }
+
+            return response;
+        }
+
+        throw new InvalidOperationException("The AI request was not sent.");
+    }
+
+    private static string Trim(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var text = value.Trim();
+        return text.Length <= max ? text : text[..max];
     }
 
     private async Task RememberAsync(ScanResult scan, string role, string content, CancellationToken cancellationToken)

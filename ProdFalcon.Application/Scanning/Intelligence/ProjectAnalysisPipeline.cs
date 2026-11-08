@@ -13,14 +13,18 @@ public static class ProjectAnalysisPipeline
         WriteIndented = false
     };
 
-    public static ProjectAnalysis Analyze(string projectPath)
+    public static ProjectAnalysis Analyze(string projectPath, IReadOnlyList<Models.ScanIssue>? knownIssues = null)
     {
         var profile = ProjectIntelligenceEngine.Analyze(projectPath);
         var architecture = ArchitectureGraphBuilder.Build(projectPath, profile);
         var additional = new List<Models.ScanIssue>();
-        additional.AddRange(CodeQualityAnalyzer.Analyze(projectPath));
-        additional.AddRange(PerformanceReliabilityAnalyzer.Analyze(projectPath));
-        var threats = ThreatModelEngine.Build(profile, architecture, additional);
+        if (knownIssues == null)
+        {
+            additional.AddRange(CodeQualityAnalyzer.Analyze(projectPath));
+            additional.AddRange(PerformanceReliabilityAnalyzer.Analyze(projectPath));
+        }
+
+        var threats = ThreatModelEngine.Build(profile, architecture, knownIssues ?? additional);
         return new ProjectAnalysis
         {
             Profile = profile,

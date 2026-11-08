@@ -58,7 +58,25 @@ public class ScanWorkerHostedService : BackgroundService
             }
             catch (OperationCanceledException)
             {
-                _logger.LogInformation("Scan {ScanResultId} was cancelled or timed out", item.ScanResultId);
+                var userCancelled = false;
+                try
+                {
+                    userCancelled = _queue.CancellationFor(item.ScanResultId).IsCancellationRequested;
+                }
+                catch (ObjectDisposedException)
+                {
+                    userCancelled = false;
+                }
+
+                if (timeout.IsCancellationRequested && !userCancelled && !stoppingToken.IsCancellationRequested)
+                {
+                    await MarkTimedOutAsync(item);
+                    _logger.LogInformation("Scan {ScanResultId} exceeded the configured time limit", item.ScanResultId);
+                }
+                else
+                {
+                    _logger.LogInformation("Scan {ScanResultId} was cancelled", item.ScanResultId);
+                }
             }
             catch (Exception ex)
             {
@@ -68,6 +86,30 @@ public class ScanWorkerHostedService : BackgroundService
             {
                 _queue.Forget(item.ScanResultId);
             }
+        }
+    }
+
+    private async Task MarkTimedOutAsync(ScanWorkItem item)
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var tenant = scope.ServiceProvider.GetRequiredService<ITenantProvider>();
+            tenant.SetTenant(item.TenantId, item.UserId, role: TenantRole.Owner);
+            var results = scope.ServiceProvider.GetRequiredService<IScanResultRepository>();
+            await results.UpdateStageAsync(item.ScanResultId, "Failed", "TimedOut", "The scan exceeded the configured time limit.", CancellationToken.None);
+            await results.SetErrorAsync(item.ScanResultId, "The scan exceeded the configured time limit.", CancellationToken.None);
+            var projects = scope.ServiceProvider.GetRequiredService<IScanProjectRepository>();
+            var project = await projects.GetByIdAsync(item.ProjectId, CancellationToken.None);
+            if (project != null)
+            {
+                project.Status = "Failed";
+                await projects.UpdateAsync(project, CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not record the timeout for scan {ScanResultId}", item.ScanResultId);
         }
     }
 }

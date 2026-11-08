@@ -54,7 +54,9 @@ public static class ProjectTechnologyDetector
     {
         foreach (var file in SourceTree.EnumerateSourceFiles(projectPath, "*.csproj"))
         {
-            var text = File.ReadAllText(file);
+            var text = SourceTree.ReadText(file);
+            if (text == null)
+                continue;
             found.Add(".NET");
             if (text.Contains("Microsoft.NET.Sdk.Web", StringComparison.OrdinalIgnoreCase))
                 found.Add("ASP.NET Core");
@@ -66,23 +68,27 @@ public static class ProjectTechnologyDetector
                 found.Add("MySQL");
         }
 
-        var packageJson = Directory.EnumerateFiles(projectPath, "package.json", SearchOption.AllDirectories)
-            .FirstOrDefault(path => !path.Contains($"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+        var packageJson = SourceTree.EnumerateSourceFiles(projectPath, "package.json").FirstOrDefault();
         if (packageJson != null)
         {
-            var text = File.ReadAllText(packageJson);
-            found.Add("Node.js");
-            if (text.Contains("\"next\"", StringComparison.OrdinalIgnoreCase))
-                found.Add("Next.js");
-            else if (text.Contains("\"react\"", StringComparison.OrdinalIgnoreCase))
-                found.Add("React");
-            if (text.Contains("\"@angular/core\"", StringComparison.OrdinalIgnoreCase))
-                found.Add("Angular");
+            var text = SourceTree.ReadText(packageJson);
+            if (text != null)
+            {
+                found.Add("Node.js");
+                if (text.Contains("\"next\"", StringComparison.OrdinalIgnoreCase))
+                    found.Add("Next.js");
+                else if (text.Contains("\"react\"", StringComparison.OrdinalIgnoreCase))
+                    found.Add("React");
+                if (text.Contains("\"@angular/core\"", StringComparison.OrdinalIgnoreCase))
+                    found.Add("Angular");
+            }
         }
 
-        foreach (var requirements in Directory.EnumerateFiles(projectPath, "requirements.txt", SearchOption.AllDirectories).Take(5))
+        foreach (var requirements in SourceTree.EnumerateSourceFiles(projectPath, "requirements.txt").Take(5))
         {
-            var text = File.ReadAllText(requirements);
+            var text = SourceTree.ReadText(requirements);
+            if (text == null)
+                continue;
             found.Add("Python");
             if (text.Contains("django", StringComparison.OrdinalIgnoreCase))
                 found.Add("Django");
@@ -90,36 +96,31 @@ public static class ProjectTechnologyDetector
                 found.Add("Flask");
         }
 
-        foreach (var pom in Directory.EnumerateFiles(projectPath, "pom.xml", SearchOption.AllDirectories).Take(5))
+        foreach (var pom in SourceTree.EnumerateSourceFiles(projectPath, "pom.xml").Take(5))
         {
-            var text = File.ReadAllText(pom);
+            var text = SourceTree.ReadText(pom);
+            if (text == null)
+                continue;
             found.Add("Java");
             if (text.Contains("spring-boot", StringComparison.OrdinalIgnoreCase))
                 found.Add("Spring Boot");
         }
 
-        foreach (var composer in Directory.EnumerateFiles(projectPath, "composer.json", SearchOption.AllDirectories).Take(3))
+        foreach (var composer in SourceTree.EnumerateSourceFiles(projectPath, "composer.json").Take(3))
         {
-            var text = File.ReadAllText(composer);
+            var text = SourceTree.ReadText(composer);
+            if (text == null)
+                continue;
             found.Add("PHP");
             if (text.Contains("laravel", StringComparison.OrdinalIgnoreCase))
                 found.Add("Laravel");
         }
 
-        foreach (var manifest in Directory.EnumerateFiles(projectPath, "*.yml", SearchOption.AllDirectories).Take(40))
+        foreach (var manifest in SourceTree.EnumerateSourceFiles(projectPath, "*.yml").Take(40))
         {
-            if (manifest.Contains($"{Path.DirectorySeparatorChar}node_modules{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase))
+            var text = SourceTree.ReadText(manifest);
+            if (text == null)
                 continue;
-
-            string text;
-            try
-            {
-                text = File.ReadAllText(manifest);
-            }
-            catch (IOException)
-            {
-                continue;
-            }
 
             if (text.Contains("kind: Deployment", StringComparison.OrdinalIgnoreCase) ||
                 text.Contains("kind: Service", StringComparison.OrdinalIgnoreCase) && text.Contains("apiVersion:", StringComparison.Ordinal))

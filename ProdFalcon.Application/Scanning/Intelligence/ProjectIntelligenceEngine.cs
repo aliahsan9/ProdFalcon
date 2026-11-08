@@ -114,7 +114,9 @@ public static class ProjectIntelligenceEngine
         string text;
         try
         {
-            text = File.ReadAllText(file);
+            text = SourceTree.ReadText(file) ?? string.Empty;
+            if (text.Length == 0 && !File.Exists(file))
+                return;
         }
         catch (IOException)
         {
@@ -156,7 +158,11 @@ public static class ProjectIntelligenceEngine
     {
         try
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(file));
+            var packageText = SourceTree.ReadText(file);
+            if (packageText == null)
+                return;
+
+            using var document = JsonDocument.Parse(packageText);
             if (document.RootElement.TryGetProperty("dependencies", out var dependencies))
                 ReadNpmDependencies(profile, dependencies, relative);
             if (document.RootElement.TryGetProperty("devDependencies", out var devDependencies))
@@ -229,10 +235,9 @@ public static class ProjectIntelligenceEngine
             string? content;
             try
             {
-                var info = new FileInfo(file);
-                if (info.Length > 300_000)
+                content = SourceTree.ReadText(file, 300_000);
+                if (content == null)
                     continue;
-                content = File.ReadAllText(file);
             }
             catch (IOException)
             {
@@ -453,8 +458,10 @@ public static class ProjectIntelligenceEngine
         {
             try
             {
-                var text = File.ReadAllText(readme);
-                var line = text.Split('\n').Select(item => item.Trim().TrimStart('#', ' ')).FirstOrDefault(item => item.Length > 40);
+                var text = SourceTree.ReadText(readme);
+                var line = string.IsNullOrWhiteSpace(text)
+                    ? null
+                    : text.Split('\n').Select(item => item.Trim().TrimStart('#', ' ')).FirstOrDefault(item => item.Length > 40);
                 if (!string.IsNullOrWhiteSpace(line))
                 {
                     profile.PurposeKind = "Detected";

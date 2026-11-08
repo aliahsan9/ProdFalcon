@@ -86,6 +86,11 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+var jwtKey = builder.Configuration["Jwt:Key"] ?? string.Empty;
+var jwtKeyIsPlaceholder = jwtKey.Length < 32 || jwtKey.Contains("THIS_IS_SUPER_SECRET_KEY", StringComparison.Ordinal);
+if (builder.Environment.IsProduction() && jwtKeyIsPlaceholder)
+    throw new InvalidOperationException("Production requires a unique Jwt:Key of at least 32 characters.");
+
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -118,6 +123,8 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+if (jwtKeyIsPlaceholder && !app.Environment.IsProduction())
+    app.Logger.LogWarning("Jwt:Key is a development placeholder. Replace it before any shared or production deployment.");
 
 if (!app.Environment.IsEnvironment("Testing"))
 {

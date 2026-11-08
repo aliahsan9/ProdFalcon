@@ -166,6 +166,15 @@ public sealed class ProjectAnalysisDocument
     public string ScoreMethodology { get; set; } = SecurityScoreMethodology.Summary;
     public string PerformanceNote { get; set; } =
         "Performance and reliability findings are static predictions. No benchmark was executed.";
+
+    public List<ScanPhaseTiming> PhaseTimings { get; set; } = [];
+}
+
+public sealed class ScanPhaseTiming
+{
+    public string Phase { get; set; } = string.Empty;
+
+    public int DurationMs { get; set; }
 }
 
 public sealed class ProjectAnalysis

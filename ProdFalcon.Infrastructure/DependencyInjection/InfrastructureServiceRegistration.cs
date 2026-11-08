@@ -34,6 +34,7 @@ public static class InfrastructureServiceRegistration
                 }));
 
         services.Configure<ScanLimitsOptions>(configuration.GetSection(ScanLimitsOptions.SectionName));
+        services.AddScoped(sp => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<ScanLimitsOptions>>().Value);
 
         services.AddHttpClient("OpenAI", client =>
         {

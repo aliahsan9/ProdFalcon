@@ -12,6 +12,7 @@ public class ProjectStorageService : IProjectStorageService
     private readonly ILogger<ProjectStorageService> _logger;
     private readonly ITenantProvider _tenantProvider;
     private readonly ZipSafetyLimits _zipLimits;
+    private readonly long _maxUploadBytes;
 
     public ProjectStorageService(
         IConfiguration configuration,
@@ -21,6 +22,7 @@ public class ProjectStorageService : IProjectStorageService
     {
         _logger = logger;
         _tenantProvider = tenantProvider;
+        _maxUploadBytes = limits.Value.MaxUploadBytes;
         _zipLimits = new ZipSafetyLimits
         {
             MaxExtractedBytes = limits.Value.MaxExtractedBytes,
@@ -55,7 +57,29 @@ public class ProjectStorageService : IProjectStorageService
             FileAccess.Write,
             FileShare.None);
 
-        await zipStream.CopyToAsync(fileStream, cancellationToken);
+        try
+        {
+            var buffer = new byte[81920];
+            long total = 0;
+            int read;
+            while ((read = await zipStream.ReadAsync(buffer, cancellationToken)) > 0)
+            {
+                total += read;
+                if (total > _maxUploadBytes)
+                    throw new InvalidDataException("The archive exceeds the upload size limit.");
+
+                await fileStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+        }
+        catch
+        {
+            fileStream.Dispose();
+            if (File.Exists(zipPath))
+                File.Delete(zipPath);
+
+            throw;
+        }
+
         return zipPath;
     }
 
@@ -67,7 +91,7 @@ public class ProjectStorageService : IProjectStorageService
 
         Directory.CreateDirectory(extractPath);
 
-        await Task.Run(() => SafeZipExtractor.Extract(zipPath, extractPath, _zipLimits), cancellationToken);
+        await Task.Run(() => SafeZipExtractor.Extract(zipPath, extractPath, _zipLimits, cancellationToken), cancellationToken);
         return extractPath;
     }
 

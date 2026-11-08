@@ -54,7 +54,7 @@ public static class SqlInjectionAnalyzer
                 if (!pattern.IsMatch(line))
                     continue;
 
-                issues.Add(Create(filePath, i + 1, title, severity));
+                issues.Add(Create(filePath, i + 1, title, severity, line));
                 break;
             }
 
@@ -62,7 +62,7 @@ public static class SqlInjectionAnalyzer
                 continue;
 
             if (ConcatenatedSql.IsMatch(line) && !IsLiteralConcatenation(line))
-                issues.Add(Create(filePath, i + 1, "SQL statement concatenated with a variable", "High"));
+                issues.Add(Create(filePath, i + 1, "SQL statement concatenated with a variable", "High", line));
         }
 
         return issues;
@@ -85,7 +85,7 @@ public static class SqlInjectionAnalyzer
     private static bool IsLiteralConcatenation(string line) =>
         Regex.IsMatch(line, @"['""][^'""]*['""]\s*\+\s*['""]");
 
-    private static ScanIssue Create(string filePath, int line, string title, string severity) =>
+    private static ScanIssue Create(string filePath, int lineNumber, string title, string severity, string line) =>
         new()
         {
             RuleId = "SEC-SQLI-001",
@@ -94,16 +94,22 @@ public static class SqlInjectionAnalyzer
             Severity = severity,
             Category = "Injection",
             FilePath = filePath,
-            LineNumber = line,
+            LineNumber = lineNumber,
             Confidence = "High",
             Cwe = "CWE-89",
             DetectionMethod = "Static analysis",
             Description = "Untrusted data appears to be combined into a SQL statement. Parameterized queries were not identified on this line.",
-            Impact = "An attacker who controls the concatenated value may read or modify data beyond the intended query.",
+            Impact = "An attacker who controls the concatenated value may read or modify data beyond the intended query. That can expose or change rows the statement was not meant to touch.",
             Remediation = "Use parameterized queries, ExecuteSqlInterpolated, or the ORM query API. Keep identifiers such as table names out of user input.",
             SecureExample = "var user = await db.Users.FromSqlInterpolated($\"SELECT * FROM Users WHERE Id = {id}\").FirstOrDefaultAsync();",
-            Evidence = "Unsafe SQL construction pattern. Query text is not copied into the finding.",
-            References = "https://owasp.org/www-community/attacks/SQL_Injection",
+            Evidence = Snippet(line),
+            References = "OWASP A03:2021 https://owasp.org/www-community/attacks/SQL_Injection",
             Status = "Open"
         };
+
+    private static string Snippet(string line)
+    {
+        var trimmed = line.Trim();
+        return trimmed.Length <= 180 ? trimmed : trimmed[..180] + "...";
+    }
 }

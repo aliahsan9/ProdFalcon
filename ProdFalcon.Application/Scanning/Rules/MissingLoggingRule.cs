@@ -19,15 +19,7 @@ public class MissingLoggingRule : IScanRule, IScanModule
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            string content;
-            try
-            {
-                content = await File.ReadAllTextAsync(file, cancellationToken);
-            }
-            catch
-            {
-                continue;
-            }
+            var content = await SourceTree.TryReadTextAsync(file, cancellationToken);
 
             if (string.IsNullOrWhiteSpace(content))
                 continue;

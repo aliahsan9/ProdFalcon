@@ -65,6 +65,18 @@ public class ScanResultRepository : IScanResultRepository
         await _db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<PreviousScanHeader?> GetLatestCompletedAsync(Guid projectId, int excludeScanResultId, CancellationToken cancellationToken = default) =>
+        await _db.ScanResults
+            .AsNoTracking()
+            .Where(result => result.ScanProjectId == projectId && result.Id != excludeScanResultId && result.Status == "Completed")
+            .OrderByDescending(result => result.CreatedAt)
+            .Select(result => new PreviousScanHeader(
+                result.Id,
+                result.Score,
+                result.CommitSha,
+                result.ScanProject != null ? result.ScanProject.Branch : null))
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task SetErrorAsync(int id, string message, CancellationToken cancellationToken = default)
     {
         var row = await _db.ScanResults.FirstOrDefaultAsync(r => r.Id == id, cancellationToken);

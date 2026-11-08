@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using ProdFalcon.Application.Interfaces;
 using ProdFalcon.Application.Scanning.Acquisition;
 using ProdFalcon.Application.Scanning.Intelligence;
@@ -19,6 +20,8 @@ public class ScanService : IScanService
     private readonly IRepositoryAcquisitionService _acquisition;
     private readonly IProjectStorageService _storage;
     private readonly IProjectWorkspaceStore _workspace;
+    private readonly ScanLimitsOptions _limits;
+    private readonly ILogger<ScanService> _logger;
 
     public ScanService(
         IScanResultRepository scanResultRepository,
@@ -27,7 +30,9 @@ public class ScanService : IScanService
         IRiskScoringService riskScoring,
         IRepositoryAcquisitionService acquisition,
         IProjectStorageService storage,
-        IProjectWorkspaceStore workspace)
+        IProjectWorkspaceStore workspace,
+        ScanLimitsOptions limits,
+        ILogger<ScanService> logger)
     {
         _scanResultRepository = scanResultRepository;
         _scanProjectRepository = scanProjectRepository;
@@ -36,6 +41,8 @@ public class ScanService : IScanService
         _acquisition = acquisition;
         _storage = storage;
         _workspace = workspace;
+        _limits = limits;
+        _logger = logger;
     }
 
     public Task<ScanResultDto> ScanProjectAsync(
@@ -72,14 +79,22 @@ public class ScanService : IScanService
             await _scanProjectRepository.UpdateAsync(project, cancellationToken);
 
             var extractPath = await PrepareSourcesAsync(project, result, accessToken, cancellationToken);
-            await UpdateStageAsync(result, "Scanning", "Detecting technologies", "Identifying languages and frameworks.", cancellationToken);
+            var acquisitionMs = (int)Math.Min(int.MaxValue, stopwatch.ElapsedMilliseconds);
+            var snapshot = await SourceSnapshotLoader.LoadAsync(extractPath, _limits, cancellationToken);
+            using var snapshotScope = SourceScanScope.Push(snapshot);
+            await UpdateStageAsync(result, "Scanning", "Detecting technologies",
+                snapshot.Truncated
+                    ? $"Identifying languages. The file list was capped at {snapshot.Files.Count} files."
+                    : "Identifying languages and frameworks.",
+                cancellationToken);
 
             var technologies = ProjectTechnologyDetector.Detect(extractPath);
             var technologyJson = ProjectTechnologyDetector.ToJson(technologies);
             project.DetectedTechnologies = technologyJson;
-            var fileCount = SourceTree.EnumerateSourceFiles(extractPath).Count();
+            var fileCount = snapshot.Files.Count;
 
             var modules = ScanMappings.ReadModules(result?.ConfigurationJson);
+            var rulesWatch = Stopwatch.StartNew();
             var execution = await _ruleExecutor.ExecuteAllAsync(
                 extractPath,
                 cancellationToken,
@@ -88,23 +103,29 @@ public class ScanService : IScanService
                 {
                     await UpdateStageAsync(result, "Scanning", "Running scanners", $"Running {ruleName}.", ct);
                 });
+            rulesWatch.Stop();
+
+            var attempted = execution.Logs
+                .Where(log => log.RuleName != "SourceSnapshot" && log.Error != "Skipped by scan configuration")
+                .ToList();
+            var failedRules = attempted.Where(log => !log.Succeeded).ToList();
+            if (attempted.Count > 0 && failedRules.Count == attempted.Count)
+                throw new InvalidOperationException("Every scanner failed. " + failedRules[0].Error);
 
             await UpdateStageAsync(result, "Scanning", "Understanding project", "Building the project profile, architecture, and threat model.", cancellationToken);
-            var supplemental = AnalyzeSafely(extractPath);
+            var analysisWatch = Stopwatch.StartNew();
+            var supplemental = AnalyzeSafely(extractPath, execution.Issues);
+            analysisWatch.Stop();
             var prepared = PrepareIssues(execution.Issues.Concat(supplemental.AdditionalIssues), extractPath, project.TenantId);
             var tracked = await _workspace.GetTrackedAsync(projectId, cancellationToken);
-            var history = await _scanResultRepository.GetByProjectIdAsync(projectId, cancellationToken);
-            var previousResult = history
-                .Where(item => item.Id != result?.Id && item.Status == "Completed")
-                .OrderByDescending(item => item.CreatedAt)
-                .FirstOrDefault();
+            var previous = await _scanResultRepository.GetLatestCompletedAsync(projectId, result?.Id ?? 0, cancellationToken);
             var comparison = FindingReconciler.Reconcile(
                 tracked,
                 prepared,
-                previousResult?.Id ?? 0,
-                previousResult?.ScanProject?.Branch ?? project.Branch,
+                previous?.Id ?? 0,
+                previous?.Branch ?? project.Branch,
                 project.Branch,
-                previousResult?.CommitSha,
+                previous?.CommitSha,
                 project.CommitSha,
                 DateTime.UtcNow);
             foreach (var finding in tracked)
@@ -119,13 +140,21 @@ public class ScanService : IScanService
                 Architecture = supplemental.Architecture,
                 ThreatModel = supplemental.Threats,
                 Comparison = comparison,
-                UnverifiedAreas = supplemental.UnverifiedAreas
+                UnverifiedAreas = supplemental.UnverifiedAreas,
+                PhaseTimings =
+                [
+                    new ScanPhaseTiming { Phase = "Acquisition", DurationMs = acquisitionMs },
+                    new ScanPhaseTiming { Phase = "FileEnumeration", DurationMs = snapshot.EnumerationMs },
+                    new ScanPhaseTiming { Phase = "FileRead", DurationMs = snapshot.ReadMs },
+                    new ScanPhaseTiming { Phase = "Rules", DurationMs = (int)Math.Min(int.MaxValue, rulesWatch.ElapsedMilliseconds) },
+                    new ScanPhaseTiming { Phase = "ProjectIntelligence", DurationMs = (int)Math.Min(int.MaxValue, analysisWatch.ElapsedMilliseconds) }
+                ]
             };
             var analysisJson = JsonSerializer.Serialize(document, ProjectAnalysisPipeline.JsonOptions);
 
             await UpdateStageAsync(result, "Scanning", "Scoring", "Calculating the security score from open findings.", cancellationToken);
             var scores = _riskScoring.Calculate(prepared);
-            var previous = previousResult?.Score;
+            var previousScore = previous?.Score;
 
             stopwatch.Stop();
 
@@ -149,13 +178,18 @@ public class ScanService : IScanService
             result.DurationMs = (int)Math.Min(int.MaxValue, stopwatch.ElapsedMilliseconds);
             result.Status = "Completed";
             result.Stage = "Completed";
-            result.StageMessage = "Scan finished.";
+            result.StageMessage = failedRules.Count == 0
+                ? "Scan finished."
+                : $"Scan finished. {failedRules.Count} scanner(s) reported an error and were skipped.";
+            if (failedRules.Count > 0)
+                result.ErrorMessage = Trim(string.Join("; ", failedRules.Select(log => $"{log.RuleName}: {log.Error}")));
             result.Technologies = technologyJson;
             result.FileCount = fileCount;
-            result.PreviousScore = previous;
+            result.PreviousScore = previousScore;
             result.CommitSha = project.CommitSha;
             result.AnalysisDocument = analysisJson;
-            result.ErrorMessage = null;
+            if (failedRules.Count == 0)
+                result.ErrorMessage = null;
             if (result.Id == 0)
             {
                 result.Issues = prepared;
@@ -187,6 +221,15 @@ public class ScanService : IScanService
             project.Status = "Completed";
             project.ExtractedPath = extractPath;
             await _scanProjectRepository.UpdateAsync(project, cancellationToken);
+            _logger.LogInformation(
+                "Scan {ScanResultId} finished in {DurationMs}ms. Files {FileCount}, findings {FindingCount}, acquisition {AcquisitionMs}ms, read {ReadMs}ms, rules {RulesMs}ms",
+                saved.Id,
+                saved.DurationMs,
+                fileCount,
+                prepared.Count,
+                acquisitionMs,
+                snapshot.ReadMs,
+                rulesWatch.ElapsedMilliseconds);
             return ScanMappings.ToDto(saved, project);
         }
         catch (OperationCanceledException)
@@ -241,11 +284,11 @@ public class ScanService : IScanService
         return project.ExtractedPath;
     }
 
-    private static ProjectAnalysis AnalyzeSafely(string projectPath)
+    private static ProjectAnalysis AnalyzeSafely(string projectPath, IReadOnlyList<ScanIssue> knownIssues)
     {
         try
         {
-            return ProjectAnalysisPipeline.Analyze(projectPath);
+            return ProjectAnalysisPipeline.Analyze(projectPath, knownIssues);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
         {

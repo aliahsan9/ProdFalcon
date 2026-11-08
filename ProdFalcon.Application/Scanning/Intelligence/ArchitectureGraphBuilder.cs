@@ -1,3 +1,5 @@
+using ProdFalcon.Application.Scanning.Rules;
+
 namespace ProdFalcon.Application.Scanning.Intelligence;
 
 public static class ArchitectureGraphBuilder
@@ -210,7 +212,7 @@ public static class ArchitectureGraphBuilder
         var path = Path.Combine(projectPath, relative.Replace('/', Path.DirectorySeparatorChar));
         try
         {
-            return File.Exists(path) ? File.ReadAllText(path) : null;
+            return SourceTree.ReadText(path);
         }
         catch (IOException)
         {

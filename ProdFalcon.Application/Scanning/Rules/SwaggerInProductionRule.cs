@@ -19,20 +19,12 @@ public class SwaggerInProductionRule : IScanRule, IScanModule
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            string content;
-            try
-            {
-                content = await File.ReadAllTextAsync(file, cancellationToken);
-            }
-            catch
-            {
-                continue;
-            }
-
+            var content = await SourceTree.TryReadTextAsync(file, cancellationToken);
             if (string.IsNullOrWhiteSpace(content))
                 continue;
 
-            if (content.Contains("UseSwagger", StringComparison.OrdinalIgnoreCase))
+            if (content.Contains("UseSwagger", StringComparison.OrdinalIgnoreCase) &&
+                !content.Contains("IsDevelopment()", StringComparison.Ordinal))
             {
                 issues.Add(new ScanIssue
                 {

@@ -135,25 +135,65 @@ public class GitHubRepositoryClient : IRepositoryAcquisitionService
         for (var hop = 0; hop < 4; hop++)
         {
             EnsureAllowed(current);
-            using var request = new HttpRequestMessage(HttpMethod.Get, current);
-            request.Headers.UserAgent.ParseAdd("ProdFalcon");
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-            if (!string.IsNullOrWhiteSpace(accessToken))
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, current);
+                request.Headers.UserAgent.ParseAdd("ProdFalcon");
+                request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
+                if (!string.IsNullOrWhiteSpace(accessToken))
+                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
 
-            var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-            if ((int)response.StatusCode is not (301 or 302 or 303 or 307 or 308))
-                return response;
+                var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (IsRateLimited(response) && attempt < 2)
+                {
+                    var delay = RetryDelay(response);
+                    response.Dispose();
+                    _logger.LogInformation("GitHub rate limit reached. Retrying in {DelayMs}ms.", (int)delay.TotalMilliseconds);
+                    await Task.Delay(delay, cancellationToken);
+                    continue;
+                }
 
-            var next = response.Headers.Location;
-            response.Dispose();
-            if (next == null)
-                throw new InvalidOperationException("GitHub returned a redirect without a location.");
+                if ((int)response.StatusCode is not (301 or 302 or 303 or 307 or 308))
+                    return response;
 
-            current = next.IsAbsoluteUri ? next : new Uri(current, next);
+                var next = response.Headers.Location;
+                response.Dispose();
+                if (next == null)
+                    throw new InvalidOperationException("GitHub returned a redirect without a location.");
+
+                current = next.IsAbsoluteUri ? next : new Uri(current, next);
+                break;
+            }
         }
 
         throw new InvalidOperationException("GitHub redirected too many times.");
+    }
+
+    private static bool IsRateLimited(HttpResponseMessage response)
+    {
+        if ((int)response.StatusCode == 429)
+            return true;
+
+        if (response.StatusCode != HttpStatusCode.Forbidden)
+            return false;
+
+        return response.Headers.TryGetValues("X-RateLimit-Remaining", out var values) &&
+               values.Any(value => value == "0");
+    }
+
+    private static TimeSpan RetryDelay(HttpResponseMessage response)
+    {
+        if (response.Headers.RetryAfter?.Delta is { } delta && delta > TimeSpan.Zero && delta < TimeSpan.FromSeconds(20))
+            return delta;
+
+        if (response.Headers.RetryAfter?.Date is { } date)
+        {
+            var wait = date - DateTimeOffset.UtcNow;
+            if (wait > TimeSpan.Zero && wait < TimeSpan.FromSeconds(20))
+                return wait;
+        }
+
+        return TimeSpan.FromSeconds(2);
     }
 
     private static void EnsureAllowed(Uri uri)

@@ -16,7 +16,11 @@ public class ApiKeyExposureRule : IScanRule, IScanModule
             if (content == null)
                 continue;
 
-            issues.AddRange(SecretsAnalyzer.AnalyzeFile(file, content));
+            foreach (var issue in SourceTree.SecretsFor(file, content))
+            {
+                if (issue.RuleId == "SEC-SECRET-001")
+                    issues.Add(issue);
+            }
         }
 
         return issues;

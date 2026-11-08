@@ -35,5 +35,6 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IScanRule, ConfigurationSecurityRule>();
         services.AddScoped<IScanRule, CodeQualityRule>();
         services.AddScoped<IScanRule, ExtendedStaticAnalysisRule>();
+        services.AddScoped<IScanRule, OwaspPatternRule>();
     }
 }

@@ -23,29 +23,6 @@ public class CodeQualityRule : IScanRule, IScanModule
             if (content == null)
                 continue;
 
-            if (content.Contains("BinaryFormatter", StringComparison.Ordinal) ||
-                content.Contains("TypeNameHandling.All", StringComparison.Ordinal))
-            {
-                issues.Add(new ScanIssue
-                {
-                    RuleId = "SEC-DESER-001",
-                    RuleName = nameof(CodeQualityRule),
-                    Title = "Unsafe deserialization API",
-                    Severity = "High",
-                    Category = "Security",
-                    FilePath = file,
-                    LineNumber = 1,
-                    Confidence = "High",
-                    Cwe = "CWE-502",
-                    DetectionMethod = "Static analysis",
-                    Description = "BinaryFormatter or TypeNameHandling.All can deserialize attacker-controlled types.",
-                    Impact = "Unsafe deserializers have been used to execute attacker-controlled payloads.",
-                    Remediation = "Remove BinaryFormatter and avoid TypeNameHandling.All. Use a serializer with a fixed type list.",
-                    SecureExample = "var dto = JsonSerializer.Deserialize<ReportDto>(json);",
-                    Status = "Open"
-                });
-            }
-
             if (!file.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) || qualityCount >= 20)
                 continue;
 

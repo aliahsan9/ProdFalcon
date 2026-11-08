@@ -19,4 +19,21 @@ public class ScanLimitsOptions
     public int MaxDependencyQueries { get; set; } = 30;
 
     public int ScanTimeoutMinutes { get; set; } = 10;
+
+    /// <summary>Upper bound for file reads and for running independent rules together.</summary>
+    public int MaxDegreeOfParallelism { get; set; } = 4;
+
+    public string[] ExcludedDirectories { get; set; } =
+    [
+        "node_modules", "bin", "obj", ".git", "dist", "build", "vendor", "packages",
+        ".vs", "coverage", "__pycache__", "target", ".next", ".angular", ".idea",
+        "bower_components", "TestResults", ".svn", ".terraform", "Pods"
+    ];
+
+    public string[] ExcludedExtensions { get; set; } =
+    [
+        ".dll", ".exe", ".pdb", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".zip",
+        ".nupkg", ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".pdf", ".snk", ".pfx", ".so",
+        ".dylib", ".wasm", ".map"
+    ];
 }

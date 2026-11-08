@@ -11,4 +11,7 @@ public interface IScanResultRepository
     Task<ScanResult> UpdateGraphAsync(ScanResult result, CancellationToken cancellationToken = default);
     Task UpdateStageAsync(int id, string status, string stage, string message, CancellationToken cancellationToken = default);
     Task SetErrorAsync(int id, string message, CancellationToken cancellationToken = default);
+    Task<PreviousScanHeader?> GetLatestCompletedAsync(Guid projectId, int excludeScanResultId, CancellationToken cancellationToken = default);
 }
+
+public sealed record PreviousScanHeader(int Id, int Score, string? CommitSha, string? Branch);

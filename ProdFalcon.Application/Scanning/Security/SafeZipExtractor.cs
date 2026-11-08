@@ -19,7 +19,7 @@ public static class SafeZipExtractor
         Inspect(archive, limits);
     }
 
-    public static void Extract(string zipPath, string destination, ZipSafetyLimits limits)
+    public static void Extract(string zipPath, string destination, ZipSafetyLimits limits, CancellationToken cancellationToken = default)
     {
         Directory.CreateDirectory(destination);
         var root = Root(destination);
@@ -30,6 +30,7 @@ public static class SafeZipExtractor
         long totalUncompressed = 0;
         foreach (var entry in archive.Entries)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(entry.Name) && entry.FullName.EndsWith('/'))
                 continue;
 
@@ -48,6 +49,7 @@ public static class SafeZipExtractor
             int read;
             while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 written += read;
                 totalUncompressed += read;
                 if (written > limits.MaxExtractedBytes || totalUncompressed > limits.MaxExtractedBytes)
@@ -109,8 +111,11 @@ public static class SafeZipExtractor
 
     private static string ResolveEntryPath(string rootWithSeparator, string entryName)
     {
+        if (entryName.Contains('\0') || entryName.Contains(':', StringComparison.Ordinal))
+            throw new InvalidDataException("Archive contains an unsafe path.");
+
         var normalized = entryName.Replace('\\', '/').TrimStart('/');
-        if (normalized.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(entryName))
+        if (normalized.Contains("..", StringComparison.Ordinal) || Path.IsPathRooted(entryName) || Path.IsPathRooted(normalized))
             throw new InvalidDataException("Archive contains an unsafe path.");
 
         var combined = Path.GetFullPath(Path.Combine(rootWithSeparator, normalized.Replace('/', Path.DirectorySeparatorChar)));
