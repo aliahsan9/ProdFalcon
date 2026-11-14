@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using ProdFalcon.Application.Scanning;
 using ProdFalcon.Application.Scanning.Models;
+using ProdFalcon.Application.Scanning.Remediation;
 
 namespace ProdFalcon.Infrastructure.Reporting;
 
@@ -35,6 +36,7 @@ public static class ScanReportWriter
                 i.Cve,
                 i.FilePath,
                 i.LineNumber,
+                i.ColumnNumber,
                 i.DetectionMethod,
                 i.Description,
                 i.Impact,
@@ -51,7 +53,7 @@ public static class ScanReportWriter
     public static byte[] WriteCsv(ScanResultDto scan)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("Id,Severity,Status,Confidence,Category,Cwe,Cve,Title,File,Line,Detection,Description,Remediation");
+        builder.AppendLine("Id,Severity,Status,Confidence,Category,Cwe,Cve,Title,File,Line,Column,Detection,Description,Remediation");
         foreach (var issue in scan.Issues)
         {
             builder.Append(issue.Id).Append(',')
@@ -64,6 +66,7 @@ public static class ScanReportWriter
                 .Append(Csv(issue.Title)).Append(',')
                 .Append(Csv(issue.FilePath)).Append(',')
                 .Append(issue.LineNumber).Append(',')
+                .Append(issue.ColumnNumber).Append(',')
                 .Append(Csv(issue.DetectionMethod)).Append(',')
                 .Append(Csv(issue.Description)).Append(',')
                 .Append(Csv(issue.Remediation))
@@ -75,38 +78,71 @@ public static class ScanReportWriter
 
     public static byte[] WritePdf(ScanResultDto scan)
     {
+        var counts = scan.Issues
+            .GroupBy(issue => string.IsNullOrWhiteSpace(issue.Severity) ? "Info" : issue.Severity)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+        string Count(string severity) => counts.TryGetValue(severity, out var count) ? count.ToString() : "0";
         var lines = new List<string>
         {
-            "ProdFalcon Security Assessment",
-            $"Project: {scan.ProjectName}",
-            $"Source: {scan.SourceType} {scan.RepositoryUrl} {scan.Branch}".Trim(),
-            $"Score: {scan.OverallScore}/100  Risk: {scan.RiskLevel}",
+            "PRODFALCON SECURITY AUDIT",
+            "Indicative report of stored static-analysis findings",
+            "",
+            $"Project: {Ascii(scan.ProjectName)}",
+            $"Source: {Ascii(scan.SourceType)} {Ascii(scan.RepositoryUrl)} {Ascii(scan.Branch)}".Trim(),
+            $"Score: {scan.OverallScore}/100  Risk: {Ascii(scan.RiskLevel)}",
             scan.PreviousScore.HasValue ? $"Previous score: {scan.PreviousScore}  Change: {scan.ScoreChange}" : "Previous score: none",
             $"Files analyzed: {scan.FileCount}",
-            "Technologies: " + string.Join(", ", scan.Technologies),
+            "Technologies: " + Ascii(string.Join(", ", scan.Technologies)),
+            $"Severity: Critical {Count("Critical")}, High {Count("High")}, Medium {Count("Medium")}, Low {Count("Low")}, Info {Count("Info")}",
             "",
+            "Scope: secrets, SQL injection, XSS, CSRF, SSRF, authentication, and dependency advisories.",
+            "Each finding cites a file, line, and column when the scanner recorded them.",
             "This score is an indicative assessment of detected issues, not proof that the project is secure.",
-            SecurityScoreMethodology.Summary,
+            Ascii(SecurityScoreMethodology.Summary),
             "",
             "Findings"
         };
 
-        foreach (var issue in scan.Issues.Take(200))
+        foreach (var issue in scan.Issues.Take(80))
         {
-            lines.Add($"{issue.Severity} {issue.Status} {issue.Title}");
-            lines.Add($"  {issue.FilePath}:{issue.LineNumber}  {issue.Cwe} {issue.Cve}".Trim());
-            lines.Add("  " + issue.Description);
+            var draft = RemediationComposer.Draft(issue);
+            var column = issue.ColumnNumber > 0 ? ":" + issue.ColumnNumber : string.Empty;
+            lines.Add($"{Ascii(issue.Severity)} {Ascii(issue.Status)} {Ascii(issue.Title)}");
+            lines.Add($"  Location: {Ascii(issue.FilePath)}:{issue.LineNumber}{column}  {Ascii(issue.Cwe)} {Ascii(issue.Cve)}".Trim());
+            lines.Add("  " + Ascii(issue.Description));
             if (!string.IsNullOrWhiteSpace(issue.Evidence))
-                lines.Add("  Evidence: " + issue.Evidence);
+                lines.Add("  Evidence: " + Ascii(issue.Evidence));
+            if (!string.IsNullOrWhiteSpace(issue.Impact))
+                lines.Add("  Impact: " + Ascii(issue.Impact));
+            lines.Add("  Why: " + Ascii(draft.Explanation));
             if (!string.IsNullOrWhiteSpace(issue.Remediation))
-                lines.Add("  Fix: " + issue.Remediation);
+                lines.Add("  Fix: " + Ascii(issue.Remediation));
+            if (!string.IsNullOrWhiteSpace(draft.PatchedSnippet))
+                lines.Add("  Suggested patch: " + Ascii(draft.PatchedSnippet));
+            lines.Add("  Patch status: Suggested. Approval is recorded separately and does not modify the repository.");
             lines.Add("");
         }
 
         if (scan.Issues.Count == 0)
             lines.Add("No findings were recorded for this scan.");
+        else if (scan.Issues.Count > 80)
+            lines.Add($"The PDF includes the first 80 of {scan.Issues.Count} findings. Download JSON or CSV for the full set.");
 
+        lines.Add("");
+        lines.Add("End of audit. A clean report does not mean the project is free of vulnerabilities.");
         return SimplePdf.Render(lines);
+    }
+
+    private static string Ascii(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        var builder = new StringBuilder(value.Length);
+        foreach (var character in value)
+            builder.Append(character is >= ' ' and <= '~' ? character : ' ');
+        return builder.ToString().Trim();
     }
 
     private static string Csv(string? value)

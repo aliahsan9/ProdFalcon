@@ -180,6 +180,79 @@ public class TenantMemberService : ITenantMemberService
         }).ToList();
     }
 
+    public async Task<TenantMemberDto> UpdateRoleAsync(int memberId, TenantRole role, CancellationToken cancellationToken = default)
+    {
+        EnsureCanManageMembers();
+        if (role == TenantRole.Owner)
+            throw new InvalidOperationException("Ownership stays with the person who created the workspace.");
+
+        var member = await _db.TenantMembers
+            .Include(item => item.User)
+            .FirstOrDefaultAsync(item => item.Id == memberId && item.Status != MemberStatus.Removed, cancellationToken);
+
+        if (member == null)
+            throw new KeyNotFoundException("Member was not found.");
+
+        if (member.Role == TenantRole.Owner)
+            throw new InvalidOperationException("The workspace owner role cannot be changed here.");
+
+        if (_tenantProvider.Role == TenantRole.Admin && member.Role == TenantRole.Admin && !_tenantProvider.IsSuperAdmin)
+            throw new UnauthorizedAccessException("Only the owner can change another admin.");
+
+        member.Role = role;
+        await _db.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync(
+            _tenantProvider.TenantId,
+            _tenantProvider.UserId,
+            "MemberRoleChanged",
+            $"{{\"memberId\":{member.Id},\"role\":\"{role}\"}}",
+            cancellationToken);
+
+        return ToDto(member);
+    }
+
+    public async Task RemoveAsync(int memberId, CancellationToken cancellationToken = default)
+    {
+        EnsureCanManageMembers();
+        var member = await _db.TenantMembers
+            .Include(item => item.User)
+            .FirstOrDefaultAsync(item => item.Id == memberId && item.Status != MemberStatus.Removed, cancellationToken);
+
+        if (member == null)
+            throw new KeyNotFoundException("Member was not found.");
+
+        if (member.Role == TenantRole.Owner)
+            throw new InvalidOperationException("The workspace owner cannot be removed.");
+
+        if (member.UserId == _tenantProvider.UserId)
+            throw new InvalidOperationException("You cannot remove yourself from the workspace.");
+
+        if (_tenantProvider.Role == TenantRole.Admin && member.Role == TenantRole.Admin && !_tenantProvider.IsSuperAdmin)
+            throw new UnauthorizedAccessException("Only the owner can remove another admin.");
+
+        member.Status = MemberStatus.Removed;
+        member.InviteToken = null;
+        await _db.SaveChangesAsync(cancellationToken);
+        await _auditService.LogAsync(
+            _tenantProvider.TenantId,
+            _tenantProvider.UserId,
+            "MemberRemoved",
+            $"{{\"memberId\":{member.Id}}}",
+            cancellationToken);
+    }
+
+    private static TenantMemberDto ToDto(TenantMember member) => new()
+    {
+        Id = member.Id,
+        UserId = member.UserId,
+        Email = member.User?.Email ?? string.Empty,
+        FullName = member.User?.FullName ?? string.Empty,
+        Role = member.Role.ToString(),
+        Status = member.Status.ToString(),
+        InvitedAt = member.InvitedAt,
+        JoinedAt = member.JoinedAt
+    };
+
     private void EnsureCanManageMembers()
     {
         if (_tenantProvider.TenantId == Guid.Empty || _tenantProvider.UserId is null)

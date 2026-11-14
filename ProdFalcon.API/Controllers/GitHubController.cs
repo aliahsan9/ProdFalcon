@@ -8,6 +8,7 @@ using ProdFalcon.Application.Scanning;
 using ProdFalcon.Application.Scanning.Acquisition;
 using ProdFalcon.Application.Scanning.GitHub;
 using ProdFalcon.Application.Scanning.Intelligence;
+using ProdFalcon.API.Authorization;
 using ProdFalcon.Application.Scanning.Interfaces;
 using ProdFalcon.Application.Scanning.Models;
 using ProdFalcon.Domain.Enums;
@@ -27,6 +28,8 @@ public class GitHubController : ControllerBase
     private readonly IScanService _scans;
     private readonly IProjectStorageService _storage;
     private readonly IScanQueue _queue;
+    private readonly IGitHubConnectionService _connections;
+    private readonly ISecurityPolicyService _policies;
     private readonly ILogger<GitHubController> _logger;
 
     public GitHubController(
@@ -38,6 +41,8 @@ public class GitHubController : ControllerBase
         IScanService scans,
         IProjectStorageService storage,
         IScanQueue queue,
+        IGitHubConnectionService connections,
+        ISecurityPolicyService policies,
         ILogger<GitHubController> logger)
     {
         _configuration = configuration;
@@ -48,6 +53,8 @@ public class GitHubController : ControllerBase
         _scans = scans;
         _storage = storage;
         _queue = queue;
+        _connections = connections;
+        _policies = policies;
         _logger = logger;
     }
 
@@ -71,7 +78,7 @@ public class GitHubController : ControllerBase
         })));
     }
 
-    [Authorize]
+    [Authorize(Policy = TenantPolicies.CanAdminister)]
     [HttpPost("registrations")]
     public async Task<IActionResult> Register([FromBody] GitHubRegistrationRequest request, CancellationToken cancellationToken)
     {
@@ -105,6 +112,159 @@ public class GitHubController : ControllerBase
             workflow = GitHubWorkflowTemplate.Create(apiBase),
             message = "Store this token as the PRODFALCON_TOKEN secret. It is not shown again."
         }));
+    }
+
+    [Authorize]
+    [HttpGet("connection")]
+    public async Task<IActionResult> Connection(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var status = await _connections.GetStatusAsync(cancellationToken);
+            return Ok(ApiResponse<GitHubConnectionDto>.Ok(status));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ApiResponse<GitHubConnectionDto>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize(Policy = TenantPolicies.CanScan)]
+    [HttpGet("oauth/start")]
+    public IActionResult StartOAuth()
+    {
+        try
+        {
+            var url = _connections.BuildAuthorizeUrl(OAuthCallbackUrl());
+            return Ok(ApiResponse<object>.Ok(new { url }));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [AllowAnonymous]
+    [HttpGet("oauth/callback")]
+    public async Task<IActionResult> OAuthCallback([FromQuery] string? code, [FromQuery] string? state, [FromQuery] string? error, CancellationToken cancellationToken)
+    {
+        var frontend = (_configuration["Frontend:BaseUrl"] ?? "http://localhost:4200").TrimEnd('/');
+        if (!string.IsNullOrWhiteSpace(error) || string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(state))
+            return Redirect($"{frontend}/integrations?github=denied");
+
+        try
+        {
+            await _connections.CompleteOAuthAsync(code, state, OAuthCallbackUrl(), cancellationToken);
+            return Redirect($"{frontend}/integrations?github=connected");
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or UnauthorizedAccessException)
+        {
+            _logger.LogInformation(ex, "GitHub OAuth callback was rejected");
+            return Redirect($"{frontend}/integrations?github=error");
+        }
+    }
+
+    [Authorize(Policy = TenantPolicies.CanScan)]
+    [HttpPost("connection")]
+    public async Task<IActionResult> ConnectToken([FromBody] GitHubTokenConnectRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var status = await _connections.ConnectTokenAsync(request.AccessToken, cancellationToken);
+            return Ok(ApiResponse<GitHubConnectionDto>.Ok(status, $"Connected as {status.Login}."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<GitHubConnectionDto>.Fail(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<GitHubConnectionDto>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize(Policy = TenantPolicies.CanScan)]
+    [HttpDelete("connection")]
+    public async Task<IActionResult> Disconnect(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _connections.DisconnectAsync(cancellationToken);
+            return Ok(ApiResponse<object>.Ok(new { connected = false }, "GitHub disconnected."));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize(Policy = TenantPolicies.CanScan)]
+    [HttpGet("repos")]
+    public async Task<IActionResult> Repositories(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var repos = await _connections.ListRepositoriesAsync(cancellationToken);
+            return Ok(ApiResponse<IReadOnlyList<GitHubRepositoryDto>>.Ok(repos));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<IReadOnlyList<GitHubRepositoryDto>>.Fail(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<IReadOnlyList<GitHubRepositoryDto>>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize(Policy = TenantPolicies.CanScan)]
+    [HttpPost("repos/scan")]
+    public async Task<IActionResult> ScanConnectedRepository([FromBody] ConnectedRepositoryScanRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var queued = await _connections.ScanRepositoryAsync(request.Owner, request.Name, request.Branch, cancellationToken);
+            return Ok(ApiResponse<QueuedRepositoryScanDto>.Ok(queued, "Repository scan queued."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<QueuedRepositoryScanDto>.Fail(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<QueuedRepositoryScanDto>.Fail(ex.Message));
+        }
+    }
+
+    [Authorize]
+    [HttpGet("pulls")]
+    public async Task<IActionResult> PullRequests(CancellationToken cancellationToken)
+    {
+        var pulls = await _connections.ListPullRequestsAsync(cancellationToken);
+        return Ok(ApiResponse<IReadOnlyList<PullRequestScanDto>>.Ok(pulls));
+    }
+
+    [Authorize(Policy = TenantPolicies.CanScan)]
+    [HttpPost("pulls/scan")]
+    public async Task<IActionResult> ScanPullRequest([FromBody] PullRequestScanRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var pull = await _connections.QueuePullRequestScanAsync(request.Owner, request.Name, request.Number, cancellationToken);
+            return Ok(ApiResponse<PullRequestScanDto>.Ok(pull, "Pull request scan queued."));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<PullRequestScanDto>.Fail(ex.Message));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<PullRequestScanDto>.Fail(ex.Message));
+        }
     }
 
     [Authorize]
@@ -193,6 +353,33 @@ public class GitHubController : ControllerBase
             ScanResultId = saved.Id
         }, cancellationToken);
 
+        if (root.TryGetProperty("pull_request", out var recordedPull)
+            && recordedPull.TryGetProperty("number", out var numberElement)
+            && numberElement.TryGetInt32(out var pullNumber))
+        {
+            var title = recordedPull.TryGetProperty("title", out var titleElement) ? titleElement.GetString() : null;
+            try
+            {
+                await _connections.RecordPullRequestAsync(new PullRequestRecord
+                {
+                    Owner = parts[0],
+                    Name = parts[1],
+                    Number = pullNumber,
+                    Title = title ?? $"Pull request {pullNumber}",
+                    HeadSha = sha,
+                    Branch = branch,
+                    Status = "Queued",
+                    ScanResultId = saved.Id,
+                    Summary = "Queued from a verified GitHub pull request webhook.",
+                    Source = "Webhook"
+                }, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Pull request scan row was not saved for {Repository}#{Number}", fullName, pullNumber);
+            }
+        }
+
         _logger.LogInformation("Queued webhook scan {ScanId} for {Repository}", saved.Id, fullName);
         return Accepted(ApiResponse<object>.Ok(new { scanResultId = saved.Id, status = "Queued" }));
     }
@@ -200,7 +387,7 @@ public class GitHubController : ControllerBase
     [AllowAnonymous]
     [HttpPost("ci")]
     [RequestSizeLimit(104_857_600)]
-    public async Task<IActionResult> ContinuousIntegration(IFormFile? file, [FromForm] string? branch, [FromForm] string? commitSha, [FromForm] string? changedFiles, CancellationToken cancellationToken)
+    public async Task<IActionResult> ContinuousIntegration(IFormFile? file, [FromForm] string? branch, [FromForm] string? commitSha, [FromForm] string? changedFiles, [FromForm] int? pullNumber, CancellationToken cancellationToken)
     {
         if (!Request.Headers.TryGetValue("Authorization", out var header) || !header.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             return Unauthorized(ApiResponse<object>.Fail("A bearer scan token is required."));
@@ -267,34 +454,95 @@ public class GitHubController : ControllerBase
             .Select(issue => $"{issue.Severity} {issue.Title} {issue.FilePath}:{issue.LineNumber}")
             .ToList();
 
-        return decision.Failed
-            ? StatusCode(StatusCodes.Status422UnprocessableEntity, ApiResponse<object>.Ok(new
+        var comparison = analysis?.Comparison ?? new ScanComparison();
+        var newSecrets = comparison.Items.Count(item =>
+            (item.Change is "New" or "Recurring" || (comparison.PreviousScanResultId == null && item.Change == "Detected"))
+            && QualityGateEvaluator.LooksLikeSecret(item.Title, null, null));
+        var openIssues = completed.Issues.Where(issue => QualityGateEvaluator.IsOpen(issue.Status)).ToList();
+        var policy = await _policies.GetAsync(cancellationToken);
+        var gate = QualityGateEvaluator.Evaluate(policy.ToSettings(), new QualityGateFacts(
+            completed.OverallScore,
+            completed.SecurityScore,
+            completed.PreviousScore,
+            openIssues.Count(issue => issue.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase)),
+            openIssues.Count(issue => issue.Severity.Equals("High", StringComparison.OrdinalIgnoreCase)),
+            decision.NewCritical,
+            decision.NewHigh,
+            newSecrets));
+        var passed = !decision.Failed && gate.Passed;
+        var messages = decision.Messages.Concat(gate.Messages).Distinct().ToList();
+
+        if (pullNumber is > 0)
+        {
+            try
             {
-                passed = false,
-                completed.ScanResultId,
-                completed.OverallScore,
-                decision.NewCritical,
-                decision.NewHigh,
-                decision.Messages,
-                changedFindings
-            }))
-            : Ok(ApiResponse<object>.Ok(new
+                await _connections.RecordPullRequestAsync(new PullRequestRecord
+                {
+                    Owner = registration.Owner,
+                    Name = registration.Name,
+                    Number = pullNumber.Value,
+                    Title = $"Pull request {pullNumber.Value}",
+                    HeadSha = commitSha,
+                    Branch = project.Branch,
+                    Status = passed ? "Passed" : "Failed",
+                    ScanResultId = completed.ScanResultId,
+                    Summary = string.Join(" ", messages),
+                    Source = "Actions"
+                }, cancellationToken);
+            }
+            catch (Exception ex)
             {
-                passed = true,
-                completed.ScanResultId,
-                completed.OverallScore,
-                decision.NewCritical,
-                decision.NewHigh,
-                decision.Messages,
-                changedFindings
-            }));
+                _logger.LogWarning(ex, "CI pull request row was not saved for {Owner}/{Name}#{Number}", registration.Owner, registration.Name, pullNumber);
+            }
+        }
+
+        var payload = new
+        {
+            passed,
+            completed.ScanResultId,
+            completed.OverallScore,
+            decision.NewCritical,
+            decision.NewHigh,
+            messages,
+            changedFindings,
+            qualityGate = new { passed = gate.Passed, gate.Messages }
+        };
+
+        return passed
+            ? Ok(ApiResponse<object>.Ok(payload))
+            : StatusCode(StatusCodes.Status422UnprocessableEntity, ApiResponse<object>.Ok(payload));
     }
+
+    private string OAuthCallbackUrl() => $"{Request.Scheme}://{Request.Host}/api/github/oauth/callback";
 
     [Authorize]
     [HttpPost("auto-fix/{scanResultId:int}")]
     public IActionResult CreateAutoFixPr(int scanResultId) =>
         StatusCode(StatusCodes.Status501NotImplemented, ApiResponse<object>.Fail(
             "Automatic pull requests are not implemented. ProdFalcon does not open a pull request or invent a URL."));
+}
+
+public class GitHubTokenConnectRequest
+{
+    public string AccessToken { get; set; } = string.Empty;
+}
+
+public class ConnectedRepositoryScanRequest
+{
+    public string Owner { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    public string? Branch { get; set; }
+}
+
+public class PullRequestScanRequest
+{
+    public string Owner { get; set; } = string.Empty;
+
+    public string Name { get; set; } = string.Empty;
+
+    public int Number { get; set; }
 }
 
 public class GitHubRegistrationRequest

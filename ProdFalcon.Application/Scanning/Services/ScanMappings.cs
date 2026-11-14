@@ -67,6 +67,7 @@ public static class ScanMappings
             Category = issue.Category,
             Description = issue.Description,
             LineNumber = issue.LineNumber,
+            ColumnNumber = issue.ColumnNumber,
             Confidence = issue.Confidence,
             Cwe = issue.Cwe,
             Cve = issue.Cve,

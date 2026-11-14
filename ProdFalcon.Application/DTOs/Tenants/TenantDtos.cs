@@ -39,6 +39,11 @@ public class TenantMemberDto
     public DateTime? JoinedAt { get; set; }
 }
 
+public class UpdateMemberRoleDto
+{
+    public TenantRole Role { get; set; } = TenantRole.Developer;
+}
+
 public class InviteResultDto
 {
     public string Email { get; set; } = string.Empty;

@@ -53,7 +53,7 @@ public class RiskScoringService : IRiskScoringService
     }
 
     private static bool IsSecurity(ScanIssue issue) =>
-        IsCategory(issue, "Security", "Secrets", "Dependencies", "Authentication", "Injection", "Configuration");
+        IsCategory(issue, "Security", "Secrets", "Dependencies", "Authentication", "Injection", "Configuration", "RequestForgery", "ServerSideRequest");
 
     private static bool IsCategory(ScanIssue issue, params string[] categories) =>
         categories.Any(c => string.Equals(issue.Category, c, StringComparison.OrdinalIgnoreCase));

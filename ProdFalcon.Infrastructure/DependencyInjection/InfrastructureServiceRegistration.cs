@@ -70,10 +70,16 @@ public static class InfrastructureServiceRegistration
         services.AddScoped<IScanService, ScanService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IOpenAiSuggestionService, OpenAiSuggestionService>();
+        services.AddScoped<IRemediationService, RemediationService>();
         services.AddScoped<IStripeSubscriptionService, StripeSubscriptionService>();
         services.AddScoped<IGitHubIntegrationService, GitHubIntegrationService>();
         services.AddScoped<IRepositoryAcquisitionService, GitHubRepositoryClient>();
         services.AddScoped<IScanQueryService, ScanQueryService>();
+        services.AddDataProtection();
+        services.AddScoped<ISecurityPolicyService, SecurityPolicyService>();
+        services.AddScoped<IGitHubConnectionService, GitHubConnectionService>();
+        services.AddScoped<ICollaborationService, CollaborationService>();
+        services.AddScoped<IAnalyticsService, AnalyticsService>();
         services.AddScoped<IProjectWorkspaceStore, ProjectWorkspaceStore>();
         services.AddScoped<IScanRule, DependencyVulnerabilityRule>();
         services.AddSingleton<ScanQueue>();

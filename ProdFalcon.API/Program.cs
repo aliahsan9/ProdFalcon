@@ -7,7 +7,9 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
+using ProdFalcon.API.Authorization;
 using ProdFalcon.API.Middleware;
+using ProdFalcon.Domain.Enums;
 using ProdFalcon.API.RateLimiting;
 using ProdFalcon.API.Versioning;
 using ProdFalcon.Application.DependencyInjection;
@@ -107,7 +109,15 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(TenantPolicies.CanScan, policy =>
+        policy.RequireAssertion(context => TenantPolicies.AtLeast(context.User, TenantRole.Developer)));
+    options.AddPolicy(TenantPolicies.CanReview, policy =>
+        policy.RequireAssertion(context => TenantPolicies.AtLeast(context.User, TenantRole.SecurityReviewer)));
+    options.AddPolicy(TenantPolicies.CanAdminister, policy =>
+        policy.RequireAssertion(context => TenantPolicies.AtLeast(context.User, TenantRole.Admin)));
+});
 builder.Services.AddHealthChecks();
 builder.Services.AddProdFalconRateLimiting(builder.Configuration);
 

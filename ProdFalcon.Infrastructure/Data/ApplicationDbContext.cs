@@ -36,6 +36,11 @@ public class ApplicationDbContext : DbContext
     public DbSet<TrackedFinding> TrackedFindings => Set<TrackedFinding>();
     public DbSet<CopilotMessage> CopilotMessages => Set<CopilotMessage>();
     public DbSet<RepositoryRegistration> RepositoryRegistrations => Set<RepositoryRegistration>();
+    public DbSet<RemediationProposal> RemediationProposals => Set<RemediationProposal>();
+    public DbSet<GitHubAccountConnection> GitHubAccountConnections => Set<GitHubAccountConnection>();
+    public DbSet<SecurityPolicy> SecurityPolicies => Set<SecurityPolicy>();
+    public DbSet<PullRequestScan> PullRequestScans => Set<PullRequestScan>();
+    public DbSet<CollaborationNote> CollaborationNotes => Set<CollaborationNote>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -190,6 +195,30 @@ public class ApplicationDbContext : DbContext
             entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 
+        modelBuilder.Entity<RemediationProposal>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.RuleId).HasMaxLength(128);
+            entity.Property(x => x.Title).HasMaxLength(500);
+            entity.Property(x => x.Severity).HasMaxLength(32);
+            entity.Property(x => x.FilePath).HasMaxLength(1024);
+            entity.Property(x => x.Explanation).HasMaxLength(4000);
+            entity.Property(x => x.SecureSuggestion).HasMaxLength(4000);
+            entity.Property(x => x.OriginalSnippet).HasMaxLength(2000);
+            entity.Property(x => x.PatchedSnippet).HasMaxLength(4000);
+            entity.Property(x => x.DiffText).HasMaxLength(4000);
+            entity.Property(x => x.Status).HasMaxLength(32);
+            entity.Property(x => x.Grounding).HasMaxLength(500);
+            entity.Property(x => x.DecisionNote).HasMaxLength(500);
+            entity.HasIndex(x => new { x.ScanResultId, x.ScanIssueId }).IsUnique();
+            entity.HasIndex(x => x.TenantId);
+            entity.HasOne(x => x.ScanResult)
+                .WithMany()
+                .HasForeignKey(x => x.ScanResultId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
         modelBuilder.Entity<RepositoryRegistration>(entity =>
         {
             entity.HasKey(x => x.Id);
@@ -201,6 +230,51 @@ public class ApplicationDbContext : DbContext
             entity.HasIndex(x => new { x.TenantId, x.Owner, x.Name }).IsUnique();
             entity.HasIndex(x => x.TokenHash);
             entity.HasIndex(x => x.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<GitHubAccountConnection>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.GitHubLogin).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.ProtectedAccessToken).IsRequired();
+            entity.Property(x => x.AvatarUrl).HasMaxLength(500);
+            entity.Property(x => x.Scopes).HasMaxLength(400);
+            entity.HasIndex(x => new { x.TenantId, x.UserId }).IsUnique();
+            entity.HasIndex(x => x.TenantId);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<SecurityPolicy>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.TenantId).IsUnique();
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<PullRequestScan>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Owner).HasMaxLength(100);
+            entity.Property(x => x.Name).HasMaxLength(100);
+            entity.Property(x => x.Title).HasMaxLength(300);
+            entity.Property(x => x.HeadSha).HasMaxLength(64);
+            entity.Property(x => x.Branch).HasMaxLength(200);
+            entity.Property(x => x.Status).HasMaxLength(32);
+            entity.Property(x => x.Summary).HasMaxLength(2000);
+            entity.Property(x => x.Source).HasMaxLength(32);
+            entity.HasIndex(x => x.TenantId);
+            entity.HasIndex(x => x.CreatedAt);
+            entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
+        });
+
+        modelBuilder.Entity<CollaborationNote>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.AuthorName).HasMaxLength(200);
+            entity.Property(x => x.Body).HasMaxLength(2000);
+            entity.HasIndex(x => x.TenantId);
+            entity.HasIndex(x => x.ScanResultId);
             entity.HasQueryFilter(e => e.TenantId == CurrentTenantId);
         });
 

@@ -86,15 +86,16 @@ public static class GitHubWorkflowTemplate
               - uses: actions/checkout@v4
               - name: Package the repository
                 run: zip -r prodfalcon.zip . -x "*.git*"
-              - name: Scan and enforce policy
+              - name: Scan and enforce the quality gate
                 env:
                   PRODFALCON_TOKEN: ${{ secrets.PRODFALCON_TOKEN }}
                 run: |
                   curl --fail-with-body -sS -X POST \
                     -H "Authorization: Bearer $PRODFALCON_TOKEN" \
                     -F "file=@prodfalcon.zip" \
-                    -F "branch=${{ github.ref_name }}" \
-                    -F "commitSha=${{ github.sha }}" \
+                    -F "branch=${{ github.head_ref }}" \
+                    -F "commitSha=${{ github.event.pull_request.head.sha }}" \
+                    -F "pullNumber=${{ github.event.pull_request.number }}" \
                     "{{{apiBaseUrl}}}/api/github/ci"
         """;
 }

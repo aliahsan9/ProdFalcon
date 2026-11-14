@@ -250,6 +250,16 @@ public static class PerformanceReliabilityAnalyzer
                 continue;
             }
 
+            string text;
+            try
+            {
+                text = File.ReadAllText(file);
+            }
+            catch (IOException)
+            {
+                text = string.Empty;
+            }
+
             foreach (var reference in document.Descendants().Where(element => element.Name.LocalName == "PackageReference"))
             {
                 var name = reference.Attribute("Include")?.Value;
@@ -259,18 +269,27 @@ public static class PerformanceReliabilityAnalyzer
                 if (parsed >= new Version(13, 0, 1))
                     continue;
 
-                issues.Add(Create(
+                var needle = "Include=\"Newtonsoft.Json\"";
+                var index = text.IndexOf(needle, StringComparison.OrdinalIgnoreCase);
+                var line = index < 0 ? 1 : SourceTree.LineNumberAt(text, index);
+                var column = index < 0 ? 1 : EvidenceLocator.Locate(text, index).Column;
+                var relative = ProjectIntelligenceEngine.Relative(projectPath, file);
+                var issue = Create(
                     "DEP-NEWTONSOFT-21907",
                     "Newtonsoft.Json below 13.0.1",
                     "High",
                     "High",
                     "Security",
                     "CWE-400",
-                    ProjectIntelligenceEngine.Relative(projectPath, file),
-                    1,
+                    relative,
+                    line,
                     "The bundled advisory list matches CVE-2024-21907 for Newtonsoft.Json before 13.0.1 (denial of service). This was not a live NVD query, and reachability was not proven.",
                     "Upgrade the PackageReference to 13.0.1 or later and review TypeNameHandling usage separately.",
-                    "<PackageReference Include=\"Newtonsoft.Json\" Version=\"13.0.3\" />"));
+                    "<PackageReference Include=\"Newtonsoft.Json\" Version=\"13.0.3\" />");
+                issue.ColumnNumber = column;
+                issue.Cve = "CVE-2024-21907";
+                issue.Evidence = EvidenceLocator.FormatAt(relative, line, column, $"{name} {version}");
+                issues.Add(issue);
             }
         }
     }

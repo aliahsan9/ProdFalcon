@@ -160,29 +160,21 @@ public class OpenAiSuggestionService : IOpenAiSuggestionService
 
         foreach (var issue in scanResult.Issues.Take(25))
         {
-            var suggestion = issue.RuleName switch
-            {
-                nameof(Application.Scanning.Rules.HardcodedConnectionStringRule) =>
-                    "Move connection strings to appsettings.json and inject via IConfiguration.",
-                nameof(Application.Scanning.Rules.SwaggerInProductionRule) =>
-                    "Disable Swagger in Production environment.",
-                nameof(Application.Scanning.Rules.MissingAuthorizationRule) =>
-                    "Add [Authorize] attributes or authorization policies to protected endpoints.",
-                nameof(Application.Scanning.Rules.ApiKeyExposureRule) =>
-                    "Store API keys in user secrets, environment variables, or a vault.",
-                nameof(Application.Scanning.Rules.HttpUsageRule) =>
-                    "Enforce HTTPS redirection and HSTS in production.",
-                _ => $"Review and remediate: {issue.Title}"
-            };
+            var location = string.IsNullOrWhiteSpace(issue.FilePath)
+                ? "the stored finding"
+                : $"{Path.GetFileName(issue.FilePath)}:{issue.LineNumber}" + (issue.ColumnNumber > 0 ? ":" + issue.ColumnNumber : string.Empty);
+            var suggestion = string.IsNullOrWhiteSpace(issue.Remediation)
+                ? $"Review {issue.Title} at {location}."
+                : $"{issue.Title} at {location}. {issue.Remediation}";
 
             fixSuggestions.Add(suggestion);
 
-            if (issue.Category == "Security")
-                security.Add(suggestion);
-            else if (issue.Category == "Production")
+            if (issue.Category is "Production" or "Configuration")
                 production.Add(suggestion);
+            else if (issue.Category is "Quality" or "Maintainability" or "Performance" or "Reliability" or "Architecture")
+                refactor.Add(suggestion);
             else
-                refactor.Add($"Refactor affected code in {issue.FilePath}");
+                security.Add(suggestion);
         }
 
         return new AiSuggestionsResponse

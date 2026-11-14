@@ -225,9 +225,12 @@ public static class OwaspPatternAnalyzer
 
         var lines = content.Split('\n');
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        var offset = 0;
         for (var i = 0; i < lines.Length; i++)
         {
             var line = lines[i];
+            var lineStart = offset;
+            offset += line.Length + 1;
             var trimmed = line.TrimStart();
             if (IsComment(trimmed, extension))
                 continue;
@@ -246,13 +249,16 @@ public static class OwaspPatternAnalyzer
                     !MentionsSecret(line))
                     continue;
 
-                if (!pattern.Expression.IsMatch(line))
+                var match = pattern.Expression.Match(line);
+                if (!match.Success)
                     continue;
 
                 var key = pattern.RuleId + "|" + pattern.Title;
                 if (!seen.Add(key))
                     continue;
 
+                var index = lineStart + match.Index;
+                var location = EvidenceLocator.Locate(content, index);
                 issues.Add(new ScanIssue
                 {
                     RuleId = pattern.RuleId,
@@ -261,7 +267,8 @@ public static class OwaspPatternAnalyzer
                     Severity = pattern.Severity,
                     Category = Category(pattern.RuleId),
                     FilePath = filePath,
-                    LineNumber = i + 1,
+                    LineNumber = location.Line,
+                    ColumnNumber = location.Column,
                     Confidence = pattern.Confidence,
                     Cwe = pattern.Cwe,
                     DetectionMethod = "Static analysis",
@@ -269,7 +276,7 @@ public static class OwaspPatternAnalyzer
                     Impact = pattern.Why + " " + pattern.Scenario,
                     Remediation = pattern.Remediation,
                     SecureExample = pattern.Example,
-                    Evidence = Snippet(line),
+                    Evidence = EvidenceLocator.Format(filePath, content, index),
                     References = pattern.Owasp + " https://owasp.org/Top10/",
                     Status = "Open"
                 });
@@ -335,10 +342,4 @@ public static class OwaspPatternAnalyzer
         "SEC-DESER-001" => "Deserialization",
         _ => "Injection"
     };
-
-    private static string Snippet(string line)
-    {
-        var trimmed = line.Trim();
-        return trimmed.Length <= 180 ? trimmed : trimmed[..180] + "...";
-    }
 }

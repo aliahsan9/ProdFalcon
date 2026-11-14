@@ -39,6 +39,50 @@ public class TenantsController : ControllerBase
         }
     }
 
+    [HttpPut("members/{memberId:int}/role")]
+    public async Task<IActionResult> UpdateRole(int memberId, [FromBody] UpdateMemberRoleDto dto, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var member = await _memberService.UpdateRoleAsync(memberId, dto.Role, cancellationToken);
+            return Ok(ApiResponse<TenantMemberDto>.Ok(member, "Role updated. The member should sign in again to refresh access."));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<TenantMemberDto>.Fail(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<TenantMemberDto>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<TenantMemberDto>.Fail(ex.Message));
+        }
+    }
+
+    [HttpDelete("members/{memberId:int}")]
+    public async Task<IActionResult> Remove(int memberId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _memberService.RemoveAsync(memberId, cancellationToken);
+            return Ok(ApiResponse<object>.Ok(new { memberId }, "Member removed."));
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(ApiResponse<object>.Fail(ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ApiResponse<object>.Fail(ex.Message));
+        }
+    }
+
     [AllowAnonymous]
     [HttpPost("invites/accept")]
     public async Task<IActionResult> AcceptInvite([FromBody] AcceptInviteDto dto, CancellationToken cancellationToken)

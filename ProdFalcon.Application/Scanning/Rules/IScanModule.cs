@@ -10,6 +10,9 @@ public static class ScanModules
     public const string Secrets = "secrets";
     public const string SqlInjection = "sql";
     public const string Authentication = "auth";
+    public const string Xss = "xss";
+    public const string Csrf = "csrf";
+    public const string Ssrf = "ssrf";
     public const string Dependencies = "dependencies";
     public const string Configuration = "configuration";
     public const string Quality = "quality";

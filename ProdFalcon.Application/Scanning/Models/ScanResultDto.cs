@@ -39,6 +39,8 @@ public class ScanIssueSummaryDto
     public string Category { get; set; } = string.Empty;
     public string? Description { get; set; }
     public int LineNumber { get; set; }
+
+    public int ColumnNumber { get; set; }
     public string Confidence { get; set; } = "High";
     public string? Cwe { get; set; }
     public string? Cve { get; set; }

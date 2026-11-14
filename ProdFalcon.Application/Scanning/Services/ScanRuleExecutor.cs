@@ -160,8 +160,12 @@ public class ScanRuleExecutor : IScanRuleExecutor
             nameof(Rules.HardcodedConnectionStringRule) or
             nameof(Rules.HardcodedJwtSecretRule) or
             nameof(Rules.PlainTextPasswordRule) => "Secrets",
-            nameof(Rules.SqlInjectionRiskRule) => "Injection",
-            nameof(Rules.MissingAuthorizationRule) => "Authentication",
+            nameof(Rules.SqlInjectionRiskRule) or
+            nameof(Rules.XssRiskRule) => "Injection",
+            nameof(Rules.CsrfRiskRule) => "RequestForgery",
+            nameof(Rules.SsrfRiskRule) => "ServerSideRequest",
+            nameof(Rules.MissingAuthorizationRule) or
+            nameof(Rules.AuthenticationHardeningRule) => "Authentication",
             nameof(Rules.CorsWildcardRule) or
             nameof(Rules.SwaggerInProductionRule) or
             nameof(Rules.ConfigurationSecurityRule) or

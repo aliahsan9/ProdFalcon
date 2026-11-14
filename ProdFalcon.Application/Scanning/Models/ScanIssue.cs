@@ -14,6 +14,9 @@ public class ScanIssue : ITenantEntity
 
     public int LineNumber { get; set; }
 
+    /// <summary>1-based column of the match. Zero means the scanner did not record a column.</summary>
+    public int ColumnNumber { get; set; }
+
     public string Description { get; set; } = string.Empty;
 
     public string RuleId { get; set; } = string.Empty;

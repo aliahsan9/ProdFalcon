@@ -25,6 +25,10 @@ public static class ApplicationServiceRegistration
         services.AddScoped<IScanRule, ApiKeyExposureRule>();
         services.AddScoped<IScanRule, DebugModeRule>();
         services.AddScoped<IScanRule, SqlInjectionRiskRule>();
+        services.AddScoped<IScanRule, XssRiskRule>();
+        services.AddScoped<IScanRule, CsrfRiskRule>();
+        services.AddScoped<IScanRule, SsrfRiskRule>();
+        services.AddScoped<IScanRule, AuthenticationHardeningRule>();
         services.AddScoped<IScanRule, HttpUsageRule>();
         services.AddScoped<IScanRule, SensitiveLoggingRule>();
         services.AddScoped<IScanRule, CorsWildcardRule>();
